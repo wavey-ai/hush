@@ -138,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         while let Ok(tga) = tga_rx.recv() {
             if let Ok(frames) = parse_tga_8bit(&tga) {
                 let arr = to_array2(&frames, 80);
-                let padded = interleave_frames(&[arr], false, 3000);
+                let padded = interleave_frames(&[arr], false, 1500);
                 let text = whisper.add(&padded);
                 let result = SttResult {
                     text: text.text().to_owned(),

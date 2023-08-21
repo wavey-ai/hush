@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  AmiId:
+    Type: AWS::EC2::Image::Id
+  InstanceType:
+    Type: String
+    Default: g4dn.xlarge
+  InstancePort:
+    Type: String
+  CertificateArn:
+    Type: String
+  VpcStackName:
+    Type: String
+    Default: dev-hush-vpc
+  HostedZoneId:
+    Type: String
+  DomainName:
+    Type: String
+
+Resources:
+  Route53HushSubdomainAliasRecord:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt Elb.CanonicalHostedZoneID
+        DNSName: !GetAtt Elb.DNSName
+
+  Ec2AutoscalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      CapacityRebalance: true
+      LaunchTemplate:
+        LaunchTemplateId: !Ref Ec2LaunchTemplate
+        Version: !GetAtt Ec2LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref ElbTargetGroup
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet1"
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet2"
+
+  Ec2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        InstanceMarketOptions:
+          MarketType: spot
+        SecurityGroupIds:
+          - !GetAtt InstanceSecurityGroup.GroupId
+  ElbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Ref InstancePort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: ${VpcStackName}-VpcId
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  Elb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet1"
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet2"
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+
+
+  ElbListenerHTTP:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: "redirect"
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: 443
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
+      LoadBalancerArn: !Ref Elb
+      Port: 80
+      Protocol: "HTTP"
+
+  ElbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ElbTargetGroup
+      LoadBalancerArn:
+        Ref: Elb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !ImportValue
+        Fn::Sub: ${VpcStackName}-VpcId
+      GroupName: "AllowEc2Traffic"
+      GroupDescription: "ssh and traffic"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref InstancePort
+          ToPort: !Ref InstancePort
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "ELBTraffic"
+      GroupDescription: "Enable HTTP access on the inbound port for ELB"
+      VpcId: !ImportValue
+        Fn::Sub: ${VpcStackName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
