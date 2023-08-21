@@ -512,7 +512,6 @@ Resources:
               InputArtifacts:
                 - Name: SourceArtifact
               OutputArtifacts:
-                - Name: explore
                 - Name: app
                 - Name: functions
                 - Name: templates
