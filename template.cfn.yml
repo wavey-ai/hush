@@ -368,7 +368,7 @@ Resources:
           - '{{resolve:secretsmanager:${SecretId}:SecretString:github_client_secret}}'
           - SecretId: !Sub ${AWS::StackName}-oidc
         oidc_issuer: https://token.actions.githubusercontent.com/
-        authorize_scopes: "user"
+        authorize_scopes: "user openid"
         attributes_request_method: "GET"
 
   UserPoolClient:
