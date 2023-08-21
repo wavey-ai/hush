@@ -25,7 +25,7 @@ cp template.cfn.yml .artifacts/templates/template.yml
 
 TEMPLATE=${CODEBUILD_SRC_DIR}/.artifacts/templates/template.yml
 
-for site in demo; do
+for site in app; do
   bkt="APP_BUCKET"
 
   rev=$(find ./web/${site}/ -type f -exec md5sum {} + | sort -k 2 | md5sum | awk '{print $1}')
