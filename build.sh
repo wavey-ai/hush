@@ -21,7 +21,7 @@ aws ecr get-login-password --region us-east-1 | docker login --username AWS --pa
 
 rm -rf .artifacts
 mkdir -p .artifacts/app .artifacts/templates
-cp template.yml .artifacts/templates/template.yml
+cp template.cfn.yml .artifacts/templates/template.yml
 
 TEMPLATE=${CODEBUILD_SRC_DIR}/.artifacts/templates/template.yml
 
