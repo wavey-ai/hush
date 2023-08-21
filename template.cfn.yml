@@ -43,10 +43,10 @@ Parameters:
 
   ApiSubdomain:
     Type: String
-    Default: api
+    Default: api-hush
   AppSubdomain:
     Type: String
-    Default: app
+    Default: hush
   OidcSubdomain:
     Type: String
     Default: sso-hush
