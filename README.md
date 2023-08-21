@@ -1,5 +1,5 @@
 # $${\color{pink}🤫hush}$$
-### Silent Whispser inference for privacy and performance.
+### Silent Whisper inference for privacy and performance.
 
 Current speech-to-text wrappers tend to require audio input, even though all 
 models use mel spectrograms, not audio, internally.
