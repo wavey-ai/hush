@@ -1,4 +1,4 @@
 #! /bin/sh
 
-cd hush && git pull --rebase origin master && cd hush && cargo build
+cd hush && git pull --rebase origin main && cd hush && cargo build
 ./target/debug/hush -m medium_en
