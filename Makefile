@@ -17,11 +17,11 @@ vpc:
 
 .PHONY: app
 app:
-	cfn-lint app.cfn.yml
+	cfn-lint template.cfn.yml
 	aws cloudformation deploy \
 	 --region $(REGION) \
 	 --stack-name $(ENV)-${STACK_NAME} \
-		--template-file app.cfn.yml \
+		--template-file template.cfn.yml \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--parameter-overrides \
 			PipelineOnly=yes \
