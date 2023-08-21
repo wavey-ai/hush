@@ -733,6 +733,7 @@ Resources:
                   - "ec2:*"
                   - "ecr:*"
                   - "elasticloadbalancing:*"
+                  - "autoscaling:*"
                   - "events:*"
                   - "iam:AttachRolePolicy"
                   - "iam:CreatePolicy"
