@@ -15,5 +15,14 @@ wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-
 unzip libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip
 sudo ln -s /usr/local/cuda-11.8 /usr/local/cuda
 
+wget -P hush/hush https://huggingface.co/Gadersd/whisper-burn/resolve/main/medium_en/medium_en.cfg
+wget -P hush/hush https://huggingface.co/Gadersd/whisper-burn/resolve/main/medium_en/medium_en.mpk.gz
+
 echo "export LIBTORCH=/home/ec2-user/libtorch" >> ~/.bashrc
 echo "export LD_LIBRARY_PATH=/home/ec2-user/libtorch/lib:" >> ~/.bashrc
+
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash
+nvm i node
+npm i -g pm2
+
+pm2 startup
