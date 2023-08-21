@@ -21,7 +21,7 @@ app:
 	aws cloudformation deploy \
 	 --region $(REGION) \
 	 --stack-name $(ENV)-${STACK_NAME} \
-		--template-file ec2.cfn.yml \
+		--template-file app.cfn.yml \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--parameter-overrides \
 			PipelineOnly=yes \
@@ -31,7 +31,7 @@ app:
 			HostedZoneId=$(HOSTED_ZONE_ID) \
 			StageName=$(ENV) \
 			CodeStarConnectionArn=$(CODESTAR_CONNECTION_ARN) \
-			BranchName=$(BRANCH_NAME)
+			BranchName=$(BRANCH_NAME) \
 			AmiId=$(AMI_ID) \
 			InstancePort=1337
 
