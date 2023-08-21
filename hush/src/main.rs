@@ -150,7 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    let addr: SocketAddr = ([127, 0, 0, 1], 1337).into();
+    let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
 
     let ready_clone_srv = Arc::clone(&ready_mutex);
     let srv = async move {
