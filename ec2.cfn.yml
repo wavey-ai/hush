@@ -12,18 +12,30 @@ Parameters:
     Type: String
   VpcStackName:
     Type: String
-    Default: dev-hush-vpc
+    Default: live-hush-vpc
   HostedZoneId:
     Type: String
   DomainName:
     Type: String
+  ApiSubdomain:
+    Type: String
+    Default: api-hush
+  StageName:
+    Type: String
+    Default: dev
+
+Conditions:
+  IsProd: !Equals [ !Ref StageName, 'live' ]
 
 Resources:
   Route53HushSubdomainAliasRecord:
     Type: 'AWS::Route53::RecordSet'
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
+      Name: !Sub
+        - '${Subdomain}.${Domain}'
+        - Subdomain: !If [IsProd, !Ref ApiSubdomain, !Sub '${StageName}-${ApiSubdomain}']
+          Domain: !Ref DomainName
       Type: A
       AliasTarget:
         HostedZoneId: !GetAtt Elb.CanonicalHostedZoneID
@@ -65,7 +77,7 @@ Resources:
       Protocol: HTTP
       VpcId: !ImportValue
         Fn::Sub: ${VpcStackName}-VpcId
-      HealthCheckIntervalSeconds: 30
+      HealthCheckIntervalSeconds: 60
       HealthCheckTimeoutSeconds: 10
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
