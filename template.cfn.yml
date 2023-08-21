@@ -19,6 +19,7 @@ Parameters:
     Default: g4dn.xlarge
   InstancePort:
     Type: String
+    Default: 1337
   VpcStackName:
     Type: String
     Default: live-hush-vpc
@@ -570,6 +571,7 @@ Resources:
                     "HostedZoneId" : "${HostedZoneId}",
                     "CodeStarConnectionArn": "${CodeStarConnectionArn}",
                     "RepositoryId": "${RepositoryId}",
+                    "AmiId": "${AmiId}",
                     "BranchName": "${BranchName}"
                   }
               OutputArtifacts: []
@@ -600,6 +602,7 @@ Resources:
                     "HostedZoneId" : "${HostedZoneId}",
                     "CodeStarConnectionArn": "${CodeStarConnectionArn}",
                     "RepositoryId": "${RepositoryId}",
+                    "AmiId": "${AmiId}",
                     "BranchName": "${BranchName}"
                   }
               OutputArtifacts: []
