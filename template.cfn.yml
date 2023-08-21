@@ -388,7 +388,7 @@ Resources:
         RefreshToken: hours
       SupportedIdentityProviders:
         - COGNITO
-        - OIDC
+        - Github
       AllowedOAuthFlows:
         - code
       AllowedOAuthFlowsUserPoolClient: true
