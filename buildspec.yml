@@ -1,0 +1,35 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - CODEBUILD_WEBHOOK_TRIGGER=${CODEBUILD_WEBHOOK_TRIGGER:="non"}
+      - SAM_CLI_TELEMETRY=0
+      - CODEBUILD_SRC_DIR=${CODEBUILD_SRC_DIR:=$(pwd)}
+      - GIT_REV=${CODEBUILD_RESOLVED_SOURCE_VERSION}
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+      - ECR_REPO=${ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+  build:
+    commands:
+      - ./build.sh
+artifacts:
+  files:
+    - '.artifacts/*'
+  secondary-artifacts:
+    app:
+      files:
+        - '**/*'
+      base-directory: '.artifacts/app'
+      name: app
+    functions:
+      files:
+        - '**/*'
+      base-directory: '.artifacts/functions'
+      name: functions
+    templates:
+      files:
+        - '**/*'
+      base-directory: '.artifacts/templates'
+      name: templates

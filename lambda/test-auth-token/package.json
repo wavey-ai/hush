@@ -1,0 +1,8 @@
+{
+	"name": "test-auth-tokem",
+	"version": "0.1.919",
+	"main": "auth.js",
+	"dependencies": {
+		"cognito-at-edge": "wavey-ai/cognito-at-edge#live"
+  }
+}
