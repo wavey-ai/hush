@@ -49,7 +49,7 @@ Parameters:
     Default: app
   OidcSubdomain:
     Type: String
-    Default: hush-sso
+    Default: sso-hush
 
 Conditions:
   IsProd: !Equals [ !Ref StageName, 'live' ]
