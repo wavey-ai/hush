@@ -731,6 +731,7 @@ Resources:
                   - "dynamodb:*"
                   - "ec2:*"
                   - "ecr:*"
+                  - "elasticloadbalancing:*"
                   - "events:*"
                   - "iam:AttachRolePolicy"
                   - "iam:CreatePolicy"
