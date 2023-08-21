@@ -1,5 +1,8 @@
 #! /bin/sh
 
+# To be run on Amazon Linux 2023 base AMI
+# Installs drivers and CUDA support for g4 instances running NVIDIA T4 Tensor Core GPU (g4dn.xlarge)
+
 sudo yum install openssl-devel git gcc make
 sudo yum install -y gcc kernel-devel-$(uname -r)
 aws s3 cp --recursive s3://ec2-linux-nvidia-drivers/latest/ .
