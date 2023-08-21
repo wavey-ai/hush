@@ -1,0 +1,758 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Timeout: 15
+
+Parameters:
+  PipelineOnly:
+    Type: String
+    Default: No
+  BootstrapBucket:
+    Type: String
+    Default: bootstrap-pipeline
+
+  AmiId:
+    Type: AWS::EC2::Image::Id
+  InstanceType:
+    Type: String
+    Default: g4dn.xlarge
+  InstancePort:
+    Type: String
+  VpcStackName:
+    Type: String
+    Default: live-hush-vpc
+
+  CodeStarConnectionArn:
+    Type: String
+  RepositoryId:
+    Type: String
+  BranchName:
+    Type: String
+
+  StageName:
+    Type: String
+  CertificateArn:
+    Type: String
+  DomainName:
+    Type: String
+
+  HostedZoneId:
+    Type: String
+
+  ApiSubdomain:
+    Type: String
+    Default: api
+  AppSubdomain:
+    Type: String
+    Default: app
+  OidcSubdomain:
+    Type: String
+    Default: sso
+
+Conditions:
+  IsProd: !Equals [ !Ref StageName, 'live' ]
+  CreateResource: !Equals [ !Ref PipelineOnly, 'No' ]
+  CreateGlobal: !And [!Equals [!Ref AWS::Region, 'us-east-1'], !Condition CreateResource]
+Resources:
+  Route53HushSubdomainAliasRecord:
+    Condition: CreateResource
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub
+        - '${Subdomain}.${Domain}'
+        - Subdomain: !If [IsProd, !Ref ApiSubdomain, !Sub '${StageName}-${ApiSubdomain}']
+          Domain: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt Elb.CanonicalHostedZoneID
+        DNSName: !GetAtt Elb.DNSName
+
+  Ec2AutoscalingGroup:
+    Condition: CreateResource
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      CapacityRebalance: true
+      LaunchTemplate:
+        LaunchTemplateId: !Ref Ec2LaunchTemplate
+        Version: !GetAtt Ec2LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref ElbTargetGroup
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet1"
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet2"
+
+  Ec2LaunchTemplate:
+    Condition: CreateResource
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        InstanceMarketOptions:
+          MarketType: spot
+        SecurityGroupIds:
+          - !GetAtt InstanceSecurityGroup.GroupId
+  ElbTargetGroup:
+    Condition: CreateResource
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Ref InstancePort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: ${VpcStackName}-VpcId
+      HealthCheckIntervalSeconds: 60
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  Elb:
+    Condition: CreateResource
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet1"
+        - !ImportValue
+          Fn::Sub: "${VpcStackName}-PublicSubnet2"
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+
+
+  ElbListenerHTTP:
+    Condition: CreateResource
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: "redirect"
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: 443
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
+      LoadBalancerArn: !Ref Elb
+      Port: 80
+      Protocol: "HTTP"
+
+  ElbListener:
+    Condition: CreateResource
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ElbTargetGroup
+      LoadBalancerArn:
+        Ref: Elb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+
+  InstanceSecurityGroup:
+    Condition: CreateResource
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !ImportValue
+        Fn::Sub: ${VpcStackName}-VpcId
+      GroupName: "AllowEc2Traffic"
+      GroupDescription: "ssh and traffic"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref InstancePort
+          ToPort: !Ref InstancePort
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  ELBSecurityGroup:
+    Condition: CreateResource
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "ELBTraffic"
+      GroupDescription: "Enable HTTP access on the inbound port for ELB"
+      VpcId: !ImportValue
+        Fn::Sub: ${VpcStackName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  AppBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateGlobal
+
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+
+  AppBucketReadPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateGlobal
+    Properties:
+      Bucket: !Ref AppBucket
+      PolicyDocument:
+       Statement:
+       - Action: 's3:GetObject'
+         Effect: Allow
+         Resource: !Sub 'arn:aws:s3:::${AppBucket}/*'
+         Principal:
+           CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+  AppDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: CreateGlobal
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Sub
+            - '${Subdomain}.${Domain}'
+            - Subdomain: !If [IsProd, !Ref AppSubdomain, !Sub '${StageName}-${AppSubdomain}']
+              Domain: !Ref DomainName
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+        Logging:
+          Bucket: !GetAtt LoggingBucket.DomainName
+          IncludeCookies : true
+          Prefix: "app-cloudfront/"
+        Enabled: true
+        Origins:
+        - DomainName: !GetAtt AppBucket.DomainName
+          Id: myS3Origin
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
+        Comment: Amazon CloudFront Distribution Secured by OIDC
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # disabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # all sans host
+          TargetOriginId: myS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          LambdaFunctionAssociations:
+            -
+              EventType: viewer-request
+              LambdaFunctionARN: !Ref EdgeAppAuth.Version
+          ForwardedValues:
+            QueryString: 'true'
+            Headers:
+              - '*'
+            Cookies:
+              Forward: 'all'
+          MinTTL: 0
+          MaxTTL: 0
+          DefaultTTL: 0
+
+  EdgeAppAuth:
+    Type: AWS::Serverless::Function
+    Condition: CreateGlobal
+    Properties:
+      Role: !GetAtt EdgeAppAuthRole.Arn
+      CodeUri:
+        Bucket: !Ref DeployBucket
+        Key: __rev__/test-auth-token/function.zip
+      Runtime: nodejs14.x
+      Handler: main.handler
+      Timeout: 5
+      AutoPublishAlias: LIVE
+      DeploymentPreference:
+        Enabled: true
+        Type: AllAtOnce
+
+  EdgeAppAuthRole:
+    Type: AWS::IAM::Role
+    Condition: CreateGlobal
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+                - 'edgelambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: EdgeAppAuthPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Condition: CreateResource
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref AWS::StackName
+
+  Route53AppSubdomainAliasRecord:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: CreateGlobal
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub
+        - "${Subdomain}.${Domain}"
+        - Subdomain: !If [IsProd, !Ref AppSubdomain, !Sub '${StageName}-${AppSubdomain}']
+          Domain: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # This is a fixed value for CloudFront distributions
+        DNSName: !GetAtt AppDistribution.DomainName
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Condition: CreateResource
+    Properties:
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UserPoolName: !Ref AWS::StackName
+      UsernameAttributes:
+        - email
+      Schema:
+        - AttributeDataType: String
+          Name: name
+          Mutable: true
+          Required: false
+
+  GithubIdentityProvider:
+    Condition: CreateResource
+    DependsOn: PipelineRole
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      ProviderName: Github
+      ProviderType: OIDC
+      UserPoolId: !Ref UserPool
+      AttributeMapping:
+        email: email
+        name: name
+      ProviderDetails:
+        client_id: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:github_client_id}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        client_secret: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:github_client_secret}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        oidc_issuer: https://token.actions.githubusercontent.com/.well-known/openid-configuration
+        authorize_scopes: "user"
+
+  UserPoolClient:
+    Condition: CreateResource
+    DependsOn: GithubIdentityProvider
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref AWS::StackName
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AccessTokenValidity: 24
+      IdTokenValidity: 24
+      RefreshTokenValidity: 24
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: hours
+      SupportedIdentityProviders:
+        - COGNITO
+        - OIDC
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - email
+        - openid
+      CallbackURLs:
+        - !Sub
+          - "https://${Subdomain}.${Domain}"
+          - Subdomain: !If [IsProd, !Ref AppSubdomain, !Sub '${StageName}-${AppSubdomain}']
+            Domain: !Ref DomainName
+      LogoutURLs:
+        - !Sub
+            - "https://${Subdomain}.${Domain}/_logout"
+            - Subdomain: !If [IsProd, 'sso', !Sub '${StageName}-sso']
+              Domain: !Ref DomainName
+
+  UserPoolDomain:
+    Condition: CreateResource
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain:
+        !Sub
+          - '${Subdomain}-${Region}.${Domain}'
+          - Subdomain: !Sub '${StageName}-${OidcSubdomain}'
+            Domain: !Ref DomainName
+            Region: !Ref AWS::Region
+      CustomDomainConfig:
+        CertificateArn: !Ref CertificateArn
+
+  Route53OidcRecord:
+    Condition: CreateResource
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name:
+        !Sub
+          - '${Subdomain}-${Region}.${Domain}'
+          - Subdomain: !Sub '${StageName}-${OidcSubdomain}'
+            Domain: !Ref DomainName
+            Region: !Ref AWS::Region
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # fixed value for CloudFront
+        DNSName: !GetAtt UserPoolDomain.CloudFrontDistribution
+  ResponseHeadersPolicy:
+    Condition: CreateResource
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-security-response-headers-policy
+        CorsConfig:
+          AccessControlAllowCredentials: true
+          AccessControlAllowHeaders:
+            Items:
+              - 'Range'
+              - 'Origin'
+              - 'Authorization'
+              - 'If-Range'
+              - 'If-Match'
+              - 'If-None-Match'
+              - 'If-Modified-Since'
+              - 'Cookie'
+              - 'Referer'
+              - 'Accept'
+              - 'Accept-Encoding'
+              - 'Accept-Ranges'
+          AccessControlAllowMethods:
+            Items:
+              - ALL
+          AccessControlAllowOrigins:
+            Items:
+              - !Sub
+                - '${Subdomain}.${Domain}'
+                - Subdomain: !If [IsProd, !Ref AppSubdomain, !Sub '${StageName}-${AppSubdomain}']
+                  Domain: !Ref DomainName
+              - 'http://localhost:8181'
+          OriginOverride: true
+
+  BuildBucket:
+    Type: AWS::S3::Bucket
+
+  DeployBucket:
+    Type: AWS::S3::Bucket
+
+  Pipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref BuildBucket
+      Name: !Sub ${AWS::StackName}
+      RoleArn: !GetAtt PipelineRole.Arn
+      Stages:
+        - Name: source
+          Actions:
+            - Name: github
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                BranchName: !Ref BranchName
+                ConnectionArn: !Ref CodeStarConnectionArn
+                FullRepositoryId: !Ref RepositoryId
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceArtifact
+              Region: !Ref AWS::Region
+              RunOrder: 1
+        - Name: build
+          Actions:
+            - Name: !Sub ${AWS::StackName}-build
+              Configuration:
+                ProjectName: !Sub ${AWS::StackName}-build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: explore
+                - Name: app
+                - Name: functions
+                - Name: templates
+              Region: !Ref AWS::Region
+              RunOrder: 1
+        - Name: s3-uploads
+          Actions:
+            - Name: cloudfront-app
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              RunOrder: 1
+              Configuration:
+                BucketName: !If [CreateGlobal, !Ref AppBucket, !Ref BootstrapBucket]
+                Extract: "true"
+              InputArtifacts:
+                - Name: app
+              Region: !Ref AWS::Region
+            - Name: lambdas-upload
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              RunOrder: 1
+              Configuration:
+                BucketName: !Ref DeployBucket
+                Extract: "true"
+              InputArtifacts:
+                - Name: functions
+              Region: !Ref AWS::Region
+        - Name: prep-changesets
+          Actions:
+            - Name: api
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              RunOrder: 5
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                ChangeSetName: !Sub ${AWS::StackName}-changeset
+                RoleArn: !GetAtt [PipelineRole, Arn]
+                StackName: !Ref AWS::StackName
+                TemplatePath: 'templates::template.yml'
+                ParameterOverrides: !Sub |
+                  {
+                    "PipelineOnly": "No",
+                    "StageName" : "${StageName}",
+                    "CertificateArn" : "${CertificateArn}",
+                    "DomainName" : "${DomainName}",
+                    "HostedZoneId" : "${HostedZoneId}",
+                    "CodeStarConnectionArn": "${CodeStarConnectionArn}",
+                    "RepositoryId": "${RepositoryId}",
+                    "BranchName": "${BranchName}"
+                  }
+              OutputArtifacts: []
+              InputArtifacts:
+                - Name: templates
+        - Name: exec-changesets
+          Actions:
+            - Name: api
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              RunOrder: 5
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                ChangeSetName: !Sub ${AWS::StackName}-changeset
+                RoleArn: !GetAtt [PipelineRole, Arn]
+                StackName: !Ref AWS::StackName
+                TemplatePath: 'templates::template.yml'
+                ParameterOverrides: !Sub |
+                  {
+                    "PipelineOnly": "No",
+                    "StageName" : "${StageName}",
+                    "CertificateArn" : "${CertificateArn}",
+                    "DomainName" : "${DomainName}",
+                    "HostedZoneId" : "${HostedZoneId}",
+                    "CodeStarConnectionArn": "${CodeStarConnectionArn}",
+                    "RepositoryId": "${RepositoryId}",
+                    "BranchName": "${BranchName}"
+                  }
+              OutputArtifacts: []
+              InputArtifacts:
+                - Name: templates
+
+  CodeBuildProject:
+    Type: "AWS::CodeBuild::Project"
+    Properties:
+      Name: !Sub ${AWS::StackName}-build
+      Artifacts:
+        Name: !Ref AWS::StackName
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: ARTIFACTS_BUCKET
+            Value: !Ref DeployBucket
+          - Name: APP_BUCKET
+            Value: !If [CreateGlobal, !Ref AppBucket, !Ref BootstrapBucket]
+          - Name: USER_POOL_ID
+            Value: !If [CreateResource, !Ref UserPool, 'foo']
+          - Name: USER_POOL_APP_ID
+            Value: !If [CreateResource, !Ref UserPoolClient, 'foo']
+          - Name: USER_POOL_DOMAIN
+            Value: !Sub
+              - '${Subdomain}-${Region}.${Domain}'
+              - Subdomain: !Sub '${StageName}-${OidcSubdomain}'
+                Domain: !Ref DomainName
+                Region: !Ref AWS::Region
+          - Name: USER_POOL_APP_SECRET
+            Value: !Sub
+              - '{{resolve:secretsmanager:${SecretId}:SecretString:user_pool_app_secret}}'
+              - SecretId: !Sub ${AWS::StackName}-oidc
+
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+      QueuedTimeoutInMinutes: 5
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      TimeoutInMinutes: 20
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_SOURCE_CACHE
+
+  CodeBuildRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Action: "sts:AssumeRole"
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-CodeBuildAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "cloudformation:*"
+                  - "cloudwatch:*"
+                  - "codebuild:*"
+                  - "codedeploy:*"
+                  - "ec2:*"
+                  - "ecr-public:*"
+                  - "ecr:*"
+                  - "events:*"
+                  - "iam:AttachRolePolicy"
+                  - "iam:CreatePolicy"
+                  - "iam:CreateRole"
+                  - "iam:DetachRolePolicy"
+                  - "iam:GetRole"
+                  - "iam:PassRole"
+                  - "iam:PutRolePolicy"
+                  - "lambda:*"
+                  - "logs:*"
+                  - "s3:*"
+                  - "secretsmanager:*"
+                  - "sns:Publish"
+                  - "sts:*"
+                Resource: "*"
+      RoleName: !Sub ${AWS::StackName}-codebuild
+
+  PipelineRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+                - cloudformation.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-CodePipelineAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "apigateway:*"
+                  - "cloudformation:*"
+                  - "codebuild:*"
+                  - "codedeploy:*"
+                  - "codepipeline:*"
+                  - "cognito-idp:*"
+                  - "cloudfront:*"
+                  - "dynamodb:*"
+                  - "ec2:*"
+                  - "ecr:*"
+                  - "events:*"
+                  - "iam:AttachRolePolicy"
+                  - "iam:CreatePolicy"
+                  - "iam:CreateRole"
+                  - "iam:DeleteRole"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:DetachRolePolicy"
+                  - "iam:GetRole"
+                  - "iam:GetRolePolicy"
+                  - "iam:PassRole"
+                  - "iam:PutRolePolicy"
+                  - "lambda:*"
+                  - "logs:*"
+                  - "route53:*"
+                  - "s3:*"
+                  - "sqs:*"
+                  - "sns:*"
+                Resource: "*"
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AWS::StackName}-oidc-*'
+              - Effect: Allow
+                Action:
+                  - "codestar-connections:UseConnection"
+                  - "codestar-connections:PassConnection"
+                Resource: !Ref CodeStarConnectionArn
+      RoleName: !Sub ${AWS::StackName}-pipelinerole
