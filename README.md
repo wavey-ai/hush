@@ -1,6 +1,6 @@
 ### 🤫 *hush*
 
-#### Silent whipser inference for privacy and performance.
+#### Silent Whipser inference for privacy and performance.
 
 Current speech-to-text wrappers tend to require audio input, even though all models use mel spectrograms, not audio, interally.
 
