@@ -25,6 +25,30 @@ cp template.cfn.yml .artifacts/templates/template.yml
 
 TEMPLATE=${CODEBUILD_SRC_DIR}/.artifacts/templates/template.yml
 
+for site in demo; do
+  bkt="APP_BUCKET"
+
+  rev=$(find ./web/${site}/ -type f -exec md5sum {} + | sort -k 2 | md5sum | awk '{print $1}')
+  mkdir -p ".artifacts/${site}/${GIT_REV}"
+  touch ".artifacts/${site}/${GIT_REV}/${rev}"
+  mkdir ".artifacts/${site}/${rev}"
+
+  if aws s3 ls "s3://${bkt}/${rev}" >/dev/null 2>&1; then
+    echo "Tag ${rev} already exists in S3. Skipping build."
+  else
+    cd web/${site} && make build && cd "${CODEBUILD_SRC_DIR}"
+    sed -i.bak "s/index.js/\/${rev}\/index.js/g" web/${site}/build/index.html
+    sed -i.bak "s/index.css/\/${rev}\/index.css/g" web/${site}/build/index.html
+    sed -i.bak "s/manifest.json/\/${rev}\/manifest.json/g" web/${site}/build/index.html
+    mv web/${site}/build/* ".artifacts/${site}/"
+    mv ".artifacts/${site}/index.js" ".artifacts/${site}/${rev}/"
+    mv ".artifacts/${site}/index.css" ".artifacts/${site}/${rev}/"
+    mv ".artifacts/${site}/manifest.json" ".artifacts/${site}/${rev}/"
+  fi
+done
+
+
+
 for func in test-auth-token; do
   rev=$(find ./lambda/${func}/ -type f -exec md5sum {} + | sort -k 2 | md5sum | awk '{print $1}');
   mkdir -p ".artifacts/functions/${rev}/${func}"

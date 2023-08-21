@@ -1,0 +1,41 @@
+{
+  "name": "uploads",
+  "version": "1.0.0",
+  "main": "builder.mjs",
+  "author": "your-name",
+  "license": "MIT",
+  "scripts": {
+    "format": "prettier --write './**/*.{js,jsx,ts,tsx,css,md,json}' --config ./.prettierrc",
+    "start": "node builder.mjs --watch",
+    "build": "node builder.mjs"
+  },
+  "dependencies": {
+    "@heroicons/react": "^2.0.18",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.14",
+    "chokidar": "^3.5.3",
+    "esbuild": "^0.15.13",
+    "esbuild-css-modules-plugin": "^2.6.2",
+    "esbuild-sass-plugin": "^2.4.0",
+    "esbuild-style-plugin": "^1.6.2",
+    "eslint": "^8.26.0",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-jsx-a11y": "^6.6.1",
+    "eslint-plugin-react": "^7.31.10",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "fs-extra": "^10.1.0",
+    "live-server": "^1.2.2",
+    "npm-run-all": "^4.1.5",
+    "postcss": "^8.4.23",
+    "postcss-preset-env": "^7.8.2",
+    "tailwindcss": "^3.3.2"
+  },
+  "overrides": {
+    "chokidar": "^3.5.3"
+  }
+}

@@ -5,3 +5,4 @@ function.zip
 node_modules
 build
 .artifacts
+bundle
