@@ -369,6 +369,7 @@ Resources:
           - SecretId: !Sub ${AWS::StackName}-oidc
         oidc_issuer: https://token.actions.githubusercontent.com/.well-known/openid-configuration
         authorize_scopes: "user"
+        attributes_request_method: "GET"
 
   UserPoolClient:
     Condition: CreateResource

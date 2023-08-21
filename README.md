@@ -46,9 +46,7 @@ The cloudformation template creates an Auto Scaling Group that requests a
 
 The same template creates the demo UI, Github auth and a self-updating AWS 
 CodePipeline project that applies infrastructure changes via the template
-alongside any code changes in the repo. (The approach of using a self-updating 
-Pipeline has been well tested in our other projects with high velocity teams 
-and is a robust one.)
+alongside any code changes in the repo.
 
 The initial deployment should be done from local via the `make app` task, this
 will create the CodePipeline pipeline.
