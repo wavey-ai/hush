@@ -247,6 +247,32 @@ Resources:
             OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
         Comment: Amazon CloudFront Distribution Secured by OIDC
         DefaultRootObject: index.html
+        CacheBehaviors:
+        - PathPattern: "*.wasm"
+          AllowedMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          Compress: true
+          ResponseHeadersPolicyId: !Ref WasmResponseHeadersPolicy
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # disabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # all sans host
+          TargetOriginId: myS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          LambdaFunctionAssociations:
+            -
+              EventType: viewer-request
+              LambdaFunctionARN: !Ref EdgeAppAuth.Version
+          ForwardedValues:
+            QueryString: 'true'
+            Headers:
+              - '*'
+            Cookies:
+              Forward: 'all'
+
         DefaultCacheBehavior:
           AllowedMethods:
             - GET
@@ -267,9 +293,9 @@ Resources:
               - '*'
             Cookies:
               Forward: 'all'
-          MinTTL: 0
-          MaxTTL: 0
-          DefaultTTL: 0
+          MinTTL: 900
+          MaxTTL: 900
+          DefaultTTL: 900
 
   EdgeAppAuth:
     Type: AWS::Serverless::Function
@@ -436,6 +462,21 @@ Resources:
       AliasTarget:
         HostedZoneId: Z2FDTNDATAQYW2 # fixed value for CloudFront
         DNSName: !GetAtt UserPoolDomain.CloudFrontDistribution
+
+
+  WasmResponseHeadersPolicy:
+    Condition: CreateResource
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-wasm-response-headers-policy
+        CustomHeadersConfig:
+          Items:
+            - Header: 'Content-Type'
+              Value: 'application/wasm'
+              Override: true
+
+
   ResponseHeadersPolicy:
     Condition: CreateResource
     Type: AWS::CloudFront::ResponseHeadersPolicy
