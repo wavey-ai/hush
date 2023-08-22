@@ -2,7 +2,7 @@
 
 use atomic::Ordering::{Relaxed, SeqCst};
 use bytes::Bytes;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use futures_util::future::join;
 use hyper::header::{ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper::server::conn::http1;
@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let whisper_mutex = Arc::new(Mutex::new(0));
     let stats = Arc::new(Mutex::new(Stats::new()));
 
-    let (loader_tx, loader_rx) = oneshot::channel();
+    let (loader_tx, loader_rx): (Sender<u8>, Receiver<u8>) = bounded(1);
 
     // TODO: use tokio channels here?
     let (tga_tx, tga_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
@@ -162,8 +162,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
 
     let stats_clone = stats.clone();
+    let stats_clone_ready = stats.clone();
 
-    let srv = async move {
+    let _ = tokio::task::spawn_blocking(move || {
+        let whisper = MelToText::new(&"tiny_en".to_string()).unwrap();
+        loader_tx.send(1).unwrap();
+        tokio::spawn(async move {
+            stats_clone_ready.lock().await.ready();
+        });
+
+        while let Ok(tga) = tga_rx.recv() {
+            if let Ok(frames) = parse_tga_8bit(&tga) {
+                let arr = to_array2(&frames, 80);
+                let padded = interleave_frames(&[arr], false, 1500);
+                let text = whisper.add(&padded);
+                let result = SttResult {
+                    text: text.text().to_owned(),
+                };
+                if let Err(send_error) = stt_tx.send(result) {
+                    eprintln!("Error sending to stt out channel: {:?}", send_error);
+                };
+            }
+        }
+    });
+
+    let stats_clone_ready2 = stats.clone();
+
+    let _ = tokio::task::spawn_blocking(move || {
+        // block waiting for first model to load
+        let _ = loader_rx.recv();
+        let whisper = MelToText::new(&"medium_en".to_string()).unwrap();
+        tokio::spawn(async move {
+            stats_clone_ready2.lock().await.ready();
+        });
+
+        while let Ok(tga) = tga2_rx.recv() {
+            if let Ok(frames) = parse_tga_8bit(&tga) {
+                let arr = to_array2(&frames, 80);
+                let padded = interleave_frames(&[arr], false, 1500);
+                let text = whisper.add(&padded);
+                let result = SttResult {
+                    text: text.text().to_owned(),
+                };
+                if let Err(send_error) = stt2_tx.send(result) {
+                    eprintln!("Error sending to stt out channel: {:?}", send_error);
+                };
+            }
+        }
+    });
+
+    let _srv = async move {
         let listener = TcpListener::bind(addr).await.unwrap();
         loop {
             // got a new connection
@@ -208,58 +256,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             });
         }
-    };
-
-    let stats_clone_ready = stats.clone();
-
-    let _ = tokio::task::spawn_blocking(move || {
-        let whisper = MelToText::new(&"tiny_en".to_string()).unwrap();
-        tokio::spawn(async move {
-            stats_clone_ready.lock().await.ready();
-            let _ = loader_tx.send(());
-        });
-
-        while let Ok(tga) = tga_rx.recv() {
-            if let Ok(frames) = parse_tga_8bit(&tga) {
-                let arr = to_array2(&frames, 80);
-                let padded = interleave_frames(&[arr], false, 1500);
-                let text = whisper.add(&padded);
-                let result = SttResult {
-                    text: text.text().to_owned(),
-                };
-                if let Err(send_error) = stt_tx.send(result) {
-                    eprintln!("Error sending to stt out channel: {:?}", send_error);
-                };
-            }
-        }
-    });
-
-    let _ = loader_rx.await;
-
-    let stats_clone_ready2 = stats.clone();
-
-    let _ = tokio::task::spawn_blocking(move || {
-        let whisper = MelToText::new(&"medium_en".to_string()).unwrap();
-        tokio::spawn(async move {
-            stats_clone_ready2.lock().await.ready();
-        });
-
-        while let Ok(tga) = tga2_rx.recv() {
-            if let Ok(frames) = parse_tga_8bit(&tga) {
-                let arr = to_array2(&frames, 80);
-                let padded = interleave_frames(&[arr], false, 1500);
-                let text = whisper.add(&padded);
-                let result = SttResult {
-                    text: text.text().to_owned(),
-                };
-                if let Err(send_error) = stt2_tx.send(result) {
-                    eprintln!("Error sending to stt out channel: {:?}", send_error);
-                };
-            }
-        }
-    });
-
-    srv.await;
+    }
+    .await;
 
     Ok(())
 }
