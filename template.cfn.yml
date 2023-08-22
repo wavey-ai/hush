@@ -373,7 +373,7 @@ Resources:
 
   UserPoolClient:
     Condition: CreateResource
-    DependsOn: GithubIdentityProvider
+    DependsOn: Auth0IdentityProvider
     Type: AWS::Cognito::UserPoolClient
     Properties:
       ClientName: !Ref AWS::StackName
