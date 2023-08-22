@@ -140,7 +140,7 @@ impl Stats {
     }
 
     pub fn models(&self) -> usize {
-        AtomicUsize::load(&self.n_out, Relaxed)
+        AtomicUsize::load(&self.models, Relaxed)
     }
 }
 
