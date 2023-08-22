@@ -82,3 +82,4 @@ This is very much a POC and a WIP.
 * Allow any audio format to be uploaded, resampling as required
 * Clients for mobile
 
+![demo](./doc/demo.png)
