@@ -11,6 +11,9 @@ phases:
       - ECR_REPO=${ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
       - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
       - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - source $HOME/.cargo/env
+      - rustup default nightly
   build:
     commands:
       - ./build.sh
