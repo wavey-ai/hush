@@ -13,6 +13,7 @@ use mel_spec::quant::*;
 use serde_json::{json, to_string};
 use std::net::SocketAddr;
 use std::sync::atomic::{self, AtomicBool, AtomicUsize};
+use tokio::sync::oneshot;
 
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{Method, Request, Response, StatusCode};
@@ -150,11 +151,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let whisper_mutex = Arc::new(Mutex::new(0));
     let stats = Arc::new(Mutex::new(Stats::new()));
 
+    let (loader_tx, loader_rx) = oneshot::channel();
+
     // TODO: use tokio channels here?
     let (tga_tx, tga_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
     let (stt_tx, stt_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
     let (tga2_tx, tga2_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
     let (stt2_tx, stt2_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
+
+    let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
+
+    let stats_clone = stats.clone();
+
+    let srv = async move {
+        let listener = TcpListener::bind(addr).await.unwrap();
+        loop {
+            // got a new connection
+            let (stream, _) = listener.accept().await.unwrap();
+            let io = TokioIo::new(stream);
+
+            let tga_tx_clone;
+            let stt_rx_clone;
+
+            if stats_clone.lock().await.models() > 1 {
+                tga_tx_clone = tga2_tx.clone();
+                stt_rx_clone = stt2_rx.clone();
+            } else {
+                tga_tx_clone = tga_tx.clone();
+                stt_rx_clone = stt_rx.clone();
+            }
+
+            let whisper_mutex_clone = whisper_mutex.clone();
+
+            let stats_clone = stats_clone.clone();
+
+            tokio::task::spawn(async move {
+                let stats_clone_inside = stats_clone.clone();
+
+                if let Err(err) = http1::Builder::new()
+                    .serve_connection(
+                        io,
+                        service_fn(|req| {
+                            let stats_clone_inside = stats_clone_inside.clone(); // Clone for the inner closure
+                            api_handler(
+                                req,
+                                &whisper_mutex_clone,
+                                tga_tx_clone.clone(),
+                                stt_rx_clone.clone(),
+                                stats_clone_inside,
+                            )
+                        }),
+                    )
+                    .await
+                {
+                    println!("Error serving connection: {:?}", err);
+                }
+            });
+        }
+    };
 
     let stats_clone_ready = stats.clone();
 
@@ -162,6 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let whisper = MelToText::new(&"tiny_en".to_string()).unwrap();
         tokio::spawn(async move {
             stats_clone_ready.lock().await.ready();
+            let _ = loader_tx.send(());
         });
 
         while let Ok(tga) = tga_rx.recv() {
@@ -178,6 +233,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
     });
+
+    let _ = loader_rx.await;
 
     let stats_clone_ready2 = stats.clone();
 
@@ -202,53 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
-    let stats_clone = stats.clone();
-    let _srv = async move {
-        let listener = TcpListener::bind(addr).await.unwrap();
-        loop {
-            // got a new connection
-            let (stream, _) = listener.accept().await.unwrap();
-            let io = TokioIo::new(stream);
-
-            let tga_tx_clone;
-            let stt_rx_clone;
-
-            if stats_clone.lock().await.models() > 1 {
-                tga_tx_clone = tga2_tx.clone();
-                stt_rx_clone = stt2_rx.clone();
-            } else {
-                tga_tx_clone = tga_tx.clone();
-                stt_rx_clone = stt_rx.clone();
-            }
-
-            let whisper_mutex_clone = whisper_mutex.clone();
-            let stats_clone = stats.clone();
-            tokio::task::spawn(async move {
-                let stats_clone_inside = stats_clone.clone();
-
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(
-                        io,
-                        service_fn(|req| {
-                            let stats_clone_inside = stats_clone_inside.clone(); // Clone for the inner closure
-                            api_handler(
-                                req,
-                                &whisper_mutex_clone,
-                                tga_tx_clone.clone(),
-                                stt_rx_clone.clone(),
-                                stats_clone_inside,
-                            )
-                        }),
-                    )
-                    .await
-                {
-                    println!("Error serving connection: {:?}", err);
-                }
-            });
-        }
-    }
-    .await;
+    srv.await;
 
     Ok(())
 }
