@@ -1,7 +1,7 @@
 #![warn(rust_2018_idioms)]
-extern crate pretty_env_logger;
-#[macro_use]
-extern crate log;
+
+use log::info;
+use pretty_env_logger;
 
 use atomic::Ordering::{Relaxed, SeqCst};
 use bytes::Bytes;
