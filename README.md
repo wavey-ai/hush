@@ -8,12 +8,12 @@ This has drawbacks, as audio needs to be sent from the user's device to the
 server and if that is not possible the implementation is restricted to run 
 locally.
 
-_**hush**_ uses 8-bit grayscale images, not audio.
+_**hush**_ uses quantized 8-bit grayscale images, not audio.
 
 As well as helping to prevent leakage of identifiable information, this approach
 simplifies voice activity detection, caching, storage / retrieval and bandwidth 
-considerations by removing audio signal processing and large audio payloads from
-the pipeline.
+considerations by removing audio signal processing and audio payloads from the 
+pipeline.
 
 For more background on how mel spectrograms are generated and used, see 
 [wavey-ai/mel-spec](https://github.com/wavey-ai/mel-spec.git) 
@@ -28,11 +28,12 @@ The fork provides a mel API and exposes whisper-burn as a service, and configure
 
 The demo UI has the following components:
 
-* non-blocking WASM workers that convert audio (from file or microphone) into
-  mel spectrograms on a stream
-* voice activity detection that looks at the relative complexity of the 
-  spectrogram 
-* a client that POSTs audio segments as images to the AWS service running 
+* non-blocking WASM workers and Audio Worklets that convert audio (from file or 
+  microphone) into mel spectrograms on a stream with ultra-low latency
+* ultra-low latency voice activity detection that works by applying Sobel edge 
+  detection to spectrograms
+* real-time visualisations on canvas
+* a client that send audio segments as images to the AWS service running 
   Whisper on GPU, receiving a text translation back
 
 #### deployment

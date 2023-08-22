@@ -349,12 +349,12 @@ Resources:
           Mutable: true
           Required: false
 
-  GithubIdentityProvider:
+  Auth0IdentityProvider:
     Condition: CreateResource
     DependsOn: PipelineRole
     Type: AWS::Cognito::UserPoolIdentityProvider
     Properties:
-      ProviderName: Github
+      ProviderName: Auth0
       ProviderType: OIDC
       UserPoolId: !Ref UserPool
       AttributeMapping:
@@ -362,13 +362,13 @@ Resources:
         name: name
       ProviderDetails:
         client_id: !Sub
-          - '{{resolve:secretsmanager:${SecretId}:SecretString:github_client_id}}'
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:auth0_client_id}}'
           - SecretId: !Sub ${AWS::StackName}-oidc
         client_secret: !Sub
-          - '{{resolve:secretsmanager:${SecretId}:SecretString:github_client_secret}}'
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:auth0_client_secret}}'
           - SecretId: !Sub ${AWS::StackName}-oidc
-        oidc_issuer: https://token.actions.githubusercontent.com/
-        authorize_scopes: "user openid"
+        oidc_issuer: https://waveyai.us.auth0.com/
+        authorize_scopes: "user openid profile"
         attributes_request_method: "GET"
 
   UserPoolClient:
@@ -388,7 +388,7 @@ Resources:
         RefreshToken: hours
       SupportedIdentityProviders:
         - COGNITO
-        - Github
+        - Auth0
       AllowedOAuthFlows:
         - code
       AllowedOAuthFlowsUserPoolClient: true
