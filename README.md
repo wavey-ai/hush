@@ -36,6 +36,13 @@ The demo UI has the following components:
 * a client that send audio segments as images to the AWS service running 
   Whisper on GPU, receiving a text translation back
 
+The demo currently uses the tiny_en model, since the medium model takes a few 
+minutes to load into memory and I don't know how often spot instances will be
+cycled - TODO.
+
+(Inference is just as quick with the medium model, once it is loaded, and the 
+results are far better.)
+
 #### deployment
 
 The included `ami.sh` creates an image with GPU support for running NVIDIA T4 
@@ -61,4 +68,4 @@ This is very much a POC and a WIP.
 * Admin UI 
 * Add auth to EC2 service
 * WebRTC Data Channel API
-
+* load medium_en model by default

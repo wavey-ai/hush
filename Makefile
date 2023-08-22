@@ -6,6 +6,7 @@ ecr:
 .PHONY: touch
 touch:
 	openssl rand -base64 12 > lambda/test-auth-token/.touch
+	openssl rand -base64 12 > web/app/.touch
 
 .PHONY: vpc
 vpc:
