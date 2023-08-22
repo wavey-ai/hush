@@ -11,7 +11,7 @@ const authenticator = new Authenticator({
   apiVersion: '',
 });
 
-exports.handler = async function (event) {
+exports.handler = async function(event) {
   const { request } = event.Records[0].cf;
   if (request.method === 'OPTIONS') {
     const originHeader = request.headers.origin && request.headers.origin[0]?.value;
