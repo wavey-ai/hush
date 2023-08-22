@@ -200,7 +200,7 @@ async function startWorker() {
       melSab,
       melBufOpts,
     });
-  }, 500);
+  }, 2000);
 
   const updateIntervalMs = 10;
 
@@ -349,7 +349,7 @@ async function startAudioProcessing(audioContext) {
       pcmSab: micSab,
       pcmBufOpts: micBufOpts,
     });
-  }, 500);
+  }, 2000);
 }
 
 function melFrame(mel) {
