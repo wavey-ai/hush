@@ -30,6 +30,8 @@ Chrome is required as the demo currently uses SIMD instructions.
 
 [https://hush.wavey.ai](https://hush.wavey.ai)
 
+![demo](./doc/demo.png)
+
 The demo UI has the following components:
 
 * non-blocking WASM workers and Audio Worklets that convert audio (from file or 
@@ -48,6 +50,8 @@ cycled - TODO.
 
 (Inference is just as quick with the medium model, once it is loaded, and the 
 results are far better.)
+
+Note that it is significantly faster with Dev Tools console closed.
 
 #### deployment
 
@@ -81,4 +85,3 @@ This is very much a POC and a WIP.
 * load medium_en model by default
 * Allow any audio format to be uploaded, resampling as required
 * Clients for mobile
-
