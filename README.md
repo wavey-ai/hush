@@ -70,6 +70,7 @@ Full instructions: TODO.
 
 This is very much a POC and a WIP.
 
+* Fix wasm content type with a cloud function
 * Traffic light status on UI for GPU spot instance: up/down/provisioning
 * Add real-time metrics to API and visibility in UI 
 * Support for Safari, non-SIMD version.
