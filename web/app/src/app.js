@@ -36,6 +36,8 @@ const micSab = sharedbuffer(micBufOpts.size, micBufOpts.max, Float32Array);
 const wavSab = sharedbuffer(wavBufOpts.size, wavBufOpts.max, Float32Array);
 
 let wav_worker;
+let pcm_worker;
+
 
 function convertToFloat(grayscaleValue) {
   return grayscaleValue / 255;
@@ -60,6 +62,15 @@ document.addEventListener("DOMContentLoaded", async function() {
 
   form.addEventListener("submit", async function(event) {
     event.preventDefault();
+    wav_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
+    pcm_worker.postMessage({
+      fftSize,
+      hopSize,
+      samplingRate,
+      nMels,
+      melSab,
+      melBufOpts,
+    });
 
     const file = fileInput.files[0];
     if (!file) {
@@ -345,6 +356,16 @@ async function startAudioProcessing(audioContext) {
   pcm_worker.postMessage({ pcmSab: micSab, pcmBufOpts: micBufOpts });
 
   setTimeout(() => {
+    wav_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
+    pcm_worker.postMessage({
+      fftSize,
+      hopSize,
+      samplingRate,
+      nMels,
+      melSab,
+      melBufOpts,
+    });
+
     audioNode.port.postMessage({
       pcmSab: micSab,
       pcmBufOpts: micBufOpts,
