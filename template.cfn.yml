@@ -99,6 +99,8 @@ Resources:
         InstanceType: !Ref InstanceType
         InstanceMarketOptions:
           MarketType: spot
+            SpotInstanceType: persistent
+            InstanceInterruptionBehavior: stop
         SecurityGroupIds:
           - !GetAtt InstanceSecurityGroup.GroupId
   ElbTargetGroup:
