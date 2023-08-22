@@ -37,8 +37,10 @@ for site in app; do
     echo "Tag ${rev} already exists in S3. Skipping build."
   else
     cd web/${site} && make build && cd "${CODEBUILD_SRC_DIR}"
-    sed -i.bak "s/index.js/\/${rev}\/index.js/g" web/${site}/build/index.html
-    sed -i.bak "s/index.css/\/${rev}\/index.css/g" web/${site}/build/index.html
+    sed -i.bak "s/__rev__/${rev}/g" web/${site}/build/index.html
+    sed -i.bak "s/__rev__/${rev}/g" web/${site}/build/app.js
+    sed -i.bak "s/__rev__/${rev}/g" web/${site}/build/worker.js
+    sed -i.bak "s/__rev__/${rev}/g" web/${site}/build/wav_worker.js
     sed -i.bak "s/manifest.json/\/${rev}\/manifest.json/g" web/${site}/build/index.html
     mv web/${site}/build/* ".artifacts/${site}/"
     mv ".artifacts/${site}/index.js" ".artifacts/${site}/${rev}/"

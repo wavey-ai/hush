@@ -5,13 +5,13 @@
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-<link rel="manifest" href="/site.webmanifest">
-<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
-<meta name="msapplication-TileColor" content="#da532c">
-<meta name="theme-color" content="#ffffff">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
+  <meta name="msapplication-TileColor" content="#da532c">
+  <meta name="theme-color" content="#ffffff">
   <meta name="theme-color" content="#000000" />
   <meta name="description" content="Web site created using react-esbuild-app" />
   <link rel="apple-touch-icon" href="logo192.png" />
@@ -20,13 +20,73 @@
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
   <link rel="manifest" href="manifest.json" />
   -->
-  <title>Wavey.AI</title>
-  <link rel="stylesheet" href="index.css">
+  <title>hush</title>
+  <style>
+    body {
+       font-family: sans-serif;
+        background-color: #f4f4f5;
+    }
+    canvas {
+      margin: 20px 0;
+    }
+    ul#mels {
+      margin: 0;
+      padding: 0;
+      list-style-type: none;
+      height: 500px;
+      overflow-y: scroll;
+    }
+    #mels li {
+      list-style-type: none;
+      float: left;
+    }
+    #mels span {
+      display: block;
+      height: 40px;
+      min-width: 50px;
+      background-color: #fff;
+      color: black;
+      padding: 5px;
+      font-size: 10pt;
+      margin-left: 1px;
+    }
+    #mels img {
+      transition: transform 0.3s;
+      height: 40px;
+      margin-left: 1px;
+    }
+    #mels img:hover {
+      transform: scale(4);
+    }
+
+  </style>
+
 </head>
 
 <body>
-  <div id="root"></div>
-  <script src="index.js"></script>
+  <h3>
+    Mel Spectrogram with Voice Activity Detection
+  </h3>
+    <section>
+      <form style="display: inline;" id="uploadForm">
+      <input type="file" id="waveFileInput" accept=".wav" />
+      <button type="submit">Play File</button>
+    </form>
+    <button style="margin-left: 20px" id="startButton">Start Mic</button>
+    </section>
+   <canvas id="canvas" height="120" width="1000"
+                style="background-color:#f4f4f5;">
+    </canvas>
+  <ul id="mels">
+  </ul>
+
+  <script src="__rev__/index.js"></script>
+  <script src="__rev__/js-colormaps.js"></script>
+  <script src='__rev__/mel_spec_pipeline.js'></script>
+  <script src='__rev__/mel_spec_audio.js'></script>
+  <script src='__rev__/ringbuffer.js'></script>
+  <script src="__rev__/app.js"></script>
+
 </body>
 
 </html>

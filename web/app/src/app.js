@@ -187,8 +187,8 @@ async function startWorker() {
   await wasm_bindgen();
   await wasm_bindgen_wav();
 
-  pcm_worker = startup("./worker.js");
-  wav_worker = startup_wav("./wav_worker.js");
+  pcm_worker = startup("__rev__/worker.js");
+  wav_worker = startup_wav("__rev__/wav_worker.js");
 
   setTimeout(() => {
     wav_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
@@ -287,7 +287,7 @@ function startUi() {
 
     mels.appendChild(liElement);
 
-    let host = "http://ec2-3-9-165-207.eu-west-2.compute.amazonaws.com:1337"
+    let host = "https://api-hush.wavey.ai"
     try {
       const response = await fetch(host, {
         method: "POST",
@@ -333,7 +333,7 @@ async function startAudioProcessing(audioContext) {
   audioInput.connect(volume);
 
   try {
-    await audioContext.audioWorklet.addModule("./dist/worklet.js");
+    await audioContext.audioWorklet.addModule("__rev__/worklet.js");
   } catch (error) {
     console.error("Error loading audio worklet:", error);
   }
