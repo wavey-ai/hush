@@ -469,12 +469,12 @@ Resources:
                   Domain: !Ref DomainName
               - 'http://localhost:8181'
           OriginOverride: true
-          CustomHeaders:
+          CustomHeadersConfig:
             Items:
-              - HeaderName: 'Cross-Origin-Opener-Policy'
-                HeaderValue: 'same-origin'
-              - HeaderName: 'Cross-Origin-Embedder-Policy'
-                HeaderValue: 'require-corp'
+              - Header: 'Cross-Origin-Opener-Policy'
+                Value: 'same-origin'
+              - Header: 'Cross-Origin-Embedder-Policy'
+                Value: 'require-corp'
 
   BuildBucket:
     Type: AWS::S3::Bucket
