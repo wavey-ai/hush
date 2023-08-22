@@ -26,12 +26,18 @@ The fork provides a mel API and exposes whisper-burn as a service, and configure
 
 #### demo
 
+Chrome is required as the demo currently uses SIMD instructions.
+
+[https://hush.wavey.ai](https://hush.wavey.ai)
+
 The demo UI has the following components:
 
 * non-blocking WASM workers and Audio Worklets that convert audio (from file or 
   microphone) into mel spectrograms on a stream with ultra-low latency
 * ultra-low latency voice activity detection that works by applying Sobel edge 
-  detection to spectrograms
+  detection to spectrograms. This is used to determine were to segment streaming
+  audio for transcription (ideally always cutting between words, and not in the 
+  middle of a word.)
 * real-time visualisations on canvas
 * a client that send audio segments as images to the AWS service running 
   Whisper on GPU, receiving a text translation back
@@ -64,8 +70,13 @@ Full instructions: TODO.
 
 This is very much a POC and a WIP.
 
+* Support for Safari, non-SIMD version.
 * Support Web GPU (AWS G4ad instance w/AMD Radeon Pro V520 GPU)
 * Admin UI 
 * Add auth to EC2 service
 * WebRTC Data Channel API
 * load medium_en model by default
+* Allow any audio format to be uploaded, resampling as required
+* Clients for mobile
+
+

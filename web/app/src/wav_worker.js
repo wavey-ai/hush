@@ -1,9 +1,9 @@
-importScripts("__rev__/mel_spec_audio.js");
-importScripts("__rev__/ringbuffer.js");
+importScripts("/__rev__/mel_spec_audio.js");
+importScripts("/__rev__/ringbuffer.js");
 
 const { WavToPcm } = wasm_bindgen_wav;
 
-const instance = wasm_bindgen_wav("__rev__/mel_spec_audio_bg.wasm");
+const instance = wasm_bindgen_wav("/__rev__/mel_spec_audio_bg.wasm");
 
 async function init_wasm_in_worker() {
   // Load the wasm file by awaiting the Promise returned by `wasm_bindgen`.

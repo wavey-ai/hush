@@ -1,9 +1,9 @@
-importScripts("__rev__/mel_spec_pipeline.js");
-importScripts("__rev__/ringbuffer.js");
+importScripts("/__rev__/mel_spec_pipeline.js");
+importScripts("/__rev__/ringbuffer.js");
 
 const { SpeechToMel } = wasm_bindgen;
 
-const instance = wasm_bindgen("__rev__/mel_spec_pipeline_bg.wasm");
+const instance = wasm_bindgen("/__rev__/mel_spec_pipeline_bg.wasm");
 
 async function init_wasm_in_worker() {
   // Load the wasm file by awaiting the Promise returned by `wasm_bindgen`.
