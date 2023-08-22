@@ -58,3 +58,4 @@ This is very much a POC and a WIP.
 
 * Support Web GPU (AWS G4ad instance w/AMD Radeon Pro V520 GPU)
 * Admin UI 
+* Add auth to EC2 service

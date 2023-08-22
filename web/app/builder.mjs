@@ -46,7 +46,7 @@ const buildParams = {
   logLevel: "error",
   incremental: isWatch,
   plugins: [
-   stylePlugin({
+    stylePlugin({
       postcss: {
         plugins: [tailwindcss, autoprefixer],
       },
