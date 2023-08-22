@@ -42,9 +42,8 @@ for site in app; do
     sed -i.bak "s/__rev__/${rev}/g" web/${site}/build/worker.js
     sed -i.bak "s/__rev__/${rev}/g" web/${site}/build/wav_worker.js
     sed -i.bak "s/manifest.json/\/${rev}\/manifest.json/g" web/${site}/build/index.html
-    mv web/${site}/build/* ".artifacts/${site}/"
-
-    cp ".artifacts/${site}/*" ".artifacts/${site}/${rev}/"
+    cp web/${site}/build/* ".artifacts/${site}/${rev}"
+    cp web/${site}/build/index.html ".artifacts/${site}/"
   fi
 done
 
