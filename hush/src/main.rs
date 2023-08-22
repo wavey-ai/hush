@@ -39,15 +39,18 @@ struct SttResult {
 
 async fn api_handler(
     req: Request<hyper::body::Incoming>,
-    ready: bool,
     whisper_mtx: &Mutex<i32>,
     tga_tx: Sender<Vec<u8>>,
     stt_rx: Receiver<SttResult>,
+    stats: Arc<Mutex<Stats>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let models = stats.lock().await.models();
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
             let json_response = json!({
-              "ready": ready,
+              "models": models,
+              "queue": stats.lock().await.queue(),
+              "done": stats.lock().await.done(),
             });
             let body = to_string(&json_response).expect("JSON serialization error");
             let mut res = Response::new(full(Bytes::from(body)).boxed());
@@ -55,8 +58,9 @@ async fn api_handler(
             Ok(res)
         }
         (&Method::POST, "/") => {
-            if ready {
+            if models > 0 {
                 let whole_body = req.collect().await.expect("body").to_bytes();
+                stats.lock().await.inc();
                 let text = {
                     // we can only process one input at a time on the whisper model
                     // TODO: a bounded(1) channel instead?
@@ -69,6 +73,7 @@ async fn api_handler(
                     stt_result.text
                 };
                 let mut res = Response::new(full(Bytes::from(text)).boxed());
+                stats.lock().await.dec();
                 cors(&mut res);
                 Ok(res)
             } else {
@@ -108,6 +113,45 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
+struct Stats {
+    n_in: AtomicUsize,
+    n_out: AtomicUsize,
+    models: AtomicUsize,
+}
+
+impl Stats {
+    pub fn new() -> Self {
+        Self {
+            n_in: AtomicUsize::new(0),
+            n_out: AtomicUsize::new(0),
+            models: AtomicUsize::new(0),
+        }
+    }
+    pub fn inc(&mut self) {
+        AtomicUsize::fetch_add(&self.n_in, 1, Relaxed);
+    }
+
+    pub fn dec(&mut self) {
+        AtomicUsize::fetch_add(&self.n_out, 1, Relaxed);
+    }
+
+    pub fn done(&self) -> usize {
+        AtomicUsize::load(&self.n_out, Relaxed)
+    }
+
+    pub fn queue(&self) -> usize {
+        AtomicUsize::load(&self.n_in, Relaxed) - AtomicUsize::load(&self.n_out, Relaxed)
+    }
+
+    pub fn ready(&self) {
+        AtomicUsize::fetch_add(&self.models, 1, Relaxed);
+    }
+
+    pub fn models(&self) -> usize {
+        AtomicUsize::load(&self.n_out, Relaxed)
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     pretty_env_logger::init();
@@ -116,21 +160,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Command::from_args();
     let model_name = args.model_name;
 
-    let ready_mutex = Arc::new(Mutex::new(false));
+    let stats = Arc::new(Mutex::new(Stats::new()));
 
     // TODO: use tokio channels here?
     let (tga_tx, tga_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
     let (stt_tx, stt_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
-    let (ready_tx, mut ready_rx) = oneshot::channel();
-    let ready_clone = Arc::clone(&ready_mutex);
 
+    let stats_clone = stats.clone();
     let _ = tokio::task::spawn_blocking(move || {
         dbg!(&model_name);
         let whisper = MelToText::new(&model_name).expect("failed to load model");
         tokio::spawn(async move {
-            if let Err(_) = ready_tx.send(1) {
-                println!("the receiver dropped");
-            }
+            stats_clone.lock().await.ready();
         });
 
         println!("Ready...");
@@ -151,31 +192,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
-
-    let ready_clone_srv = Arc::clone(&ready_mutex);
-    let srv = async move {
+    let _srv = async move {
         let listener = TcpListener::bind(addr).await.unwrap();
         loop {
+            // got a new connection
             let (stream, _) = listener.accept().await.unwrap();
             let io = TokioIo::new(stream);
 
-            let ready_mutex_guard = ready_clone_srv.lock().await;
-            let ready_clone = ready_mutex_guard.clone();
             let tga_tx_clone = tga_tx.clone();
             let stt_rx_clone = stt_rx.clone();
             let whisper_mutex_clone = whisper_mutex.clone();
-
+            let stats_clone = stats.clone();
             tokio::task::spawn(async move {
+                let stats_clone_inside = stats_clone.clone();
+
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(
                         io,
                         service_fn(|req| {
+                            let stats_clone_inside = stats_clone_inside.clone(); // Clone for the inner closure
                             api_handler(
                                 req,
-                                ready_clone,
                                 &whisper_mutex_clone,
                                 tga_tx_clone.clone(),
                                 stt_rx_clone.clone(),
+                                stats_clone_inside,
                             )
                         }),
                     )
@@ -185,25 +226,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             });
         }
-    };
+    }
+    .await;
 
-    println!("Listening on http://{}", addr,);
-
-    let loop_handle: JoinHandle<()> = tokio::spawn(async move {
-        let dur = Duration::from_millis(100);
-        let mut interval = interval(dur);
-        loop {
-            tokio::select! {
-
-                _ = interval.tick() => {},
-                _ = &mut ready_rx => {
-                    *ready_clone.lock().await = true;
-                    break;
-                }
-            }
-        }
-    });
-
-    tokio::join!(srv, loop_handle);
     Ok(())
 }
