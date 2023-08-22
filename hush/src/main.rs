@@ -1,4 +1,7 @@
 #![warn(rust_2018_idioms)]
+extern crate pretty_env_logger;
+#[macro_use]
+extern crate log;
 
 use atomic::Ordering::{Relaxed, SeqCst};
 use bytes::Bytes;
@@ -165,7 +168,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stats_clone_ready = stats.clone();
 
     let _ = tokio::task::spawn_blocking(move || {
-        let whisper = MelToText::new(&"tiny_en".to_string()).unwrap();
+        let model_name = "tiny_en".to_string();
+        info!("loading model {:?}", model_name);
+
+        let t = std::time::Instant::now();
+        let whisper = MelToText::new(&model_name).unwrap();
+        info!(
+            "{:?} loaded in {:?} secs",
+            model_name,
+            t.elapsed().as_secs()
+        );
         loader_tx.send(1).unwrap();
         tokio::spawn(async move {
             stats_clone_ready.lock().await.ready();
@@ -191,7 +203,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _ = tokio::task::spawn_blocking(move || {
         // block waiting for first model to load
         let _ = loader_rx.recv();
-        let whisper = MelToText::new(&"medium_en".to_string()).unwrap();
+        let model_name = "medium_en".to_string();
+        info!("loading model {:?}", model_name);
+
+        let t = std::time::Instant::now();
+        let whisper = MelToText::new(&model_name).unwrap();
+        info!(
+            "{:?} loaded in {:?} secs",
+            model_name,
+            t.elapsed().as_secs()
+        );
         tokio::spawn(async move {
             stats_clone_ready2.lock().await.ready();
         });
@@ -211,7 +232,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    let _srv = async move {
+    let srv = async move {
         let listener = TcpListener::bind(addr).await.unwrap();
         loop {
             // got a new connection
@@ -256,8 +277,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             });
         }
-    }
-    .await;
+    };
+
+    info!("hush server listening on {:?}", addr);
+
+    srv.await;
 
     Ok(())
 }
