@@ -20,18 +20,9 @@ use tokio::net::TcpListener;
 use tokio::time::{interval, Duration};
 
 use std::sync::Arc;
-use structopt::StructOpt;
-use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use whisper::service::MelToText;
-
-#[derive(Debug, StructOpt)]
-#[structopt(name = "hush", about = "hush")]
-struct Command {
-    #[structopt(short, long, default_value = "tiny_en")]
-    model_name: String,
-}
 
 struct SttResult {
     text: String,
@@ -157,24 +148,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     pretty_env_logger::init();
 
     let whisper_mutex = Arc::new(Mutex::new(0));
-    let args = Command::from_args();
-    let model_name = args.model_name;
-
     let stats = Arc::new(Mutex::new(Stats::new()));
 
     // TODO: use tokio channels here?
     let (tga_tx, tga_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
     let (stt_tx, stt_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
+    let (tga2_tx, tga2_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
+    let (stt2_tx, stt2_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
 
-    let stats_clone = stats.clone();
+    let stats_clone_ready = stats.clone();
+
     let _ = tokio::task::spawn_blocking(move || {
-        dbg!(&model_name);
-        let whisper = MelToText::new(&model_name).expect("failed to load model");
+        let whisper = MelToText::new(&"tiny_en".to_string()).unwrap();
         tokio::spawn(async move {
-            stats_clone.lock().await.ready();
+            stats_clone_ready.lock().await.ready();
         });
-
-        println!("Ready...");
 
         while let Ok(tga) = tga_rx.recv() {
             if let Ok(frames) = parse_tga_8bit(&tga) {
@@ -191,7 +179,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
+    let stats_clone_ready2 = stats.clone();
+
+    let _ = tokio::task::spawn_blocking(move || {
+        let whisper = MelToText::new(&"medium_en".to_string()).unwrap();
+        tokio::spawn(async move {
+            stats_clone_ready2.lock().await.ready();
+        });
+
+        while let Ok(tga) = tga2_rx.recv() {
+            if let Ok(frames) = parse_tga_8bit(&tga) {
+                let arr = to_array2(&frames, 80);
+                let padded = interleave_frames(&[arr], false, 1500);
+                let text = whisper.add(&padded);
+                let result = SttResult {
+                    text: text.text().to_owned(),
+                };
+                if let Err(send_error) = stt2_tx.send(result) {
+                    eprintln!("Error sending to stt out channel: {:?}", send_error);
+                };
+            }
+        }
+    });
+
     let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
+    let stats_clone = stats.clone();
     let _srv = async move {
         let listener = TcpListener::bind(addr).await.unwrap();
         loop {
@@ -199,8 +211,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let (stream, _) = listener.accept().await.unwrap();
             let io = TokioIo::new(stream);
 
-            let tga_tx_clone = tga_tx.clone();
-            let stt_rx_clone = stt_rx.clone();
+            let tga_tx_clone;
+            let stt_rx_clone;
+
+            if stats_clone.lock().await.models() > 1 {
+                tga_tx_clone = tga2_tx.clone();
+                stt_rx_clone = stt2_rx.clone();
+            } else {
+                tga_tx_clone = tga_tx.clone();
+                stt_rx_clone = stt_rx.clone();
+            }
+
             let whisper_mutex_clone = whisper_mutex.clone();
             let stats_clone = stats.clone();
             tokio::task::spawn(async move {
