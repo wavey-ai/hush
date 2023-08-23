@@ -245,6 +245,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 tga_tx_clone = tga2_tx.clone();
                 stt_rx_clone = stt2_rx_mutex.clone();
             } else {
+                info!("using model 1");
                 tga_tx_clone = tga_tx.clone();
                 stt_rx_clone = stt_rx_mutex.clone();
             }

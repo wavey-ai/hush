@@ -1591,6 +1591,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.0.0-rc.4",
  "hyper-util",
+ "log",
  "mel_spec",
  "pretty_env_logger",
  "serde",
