@@ -237,18 +237,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let (stream, _) = listener.accept().await.unwrap();
             let io = TokioIo::new(stream);
 
-            let tga_tx_clone;
-            let stt_rx_clone;
-
-            if stats_clone.lock().await.models() > 1 {
-                info!("using model 2");
-                tga_tx_clone = tga2_tx.clone();
-                stt_rx_clone = stt2_rx_mutex.clone();
-            } else {
-                info!("using model 1");
-                tga_tx_clone = tga_tx.clone();
-                stt_rx_clone = stt_rx_mutex.clone();
-            }
+            let tga_tx_clone = tga2_tx.clone();
+            let stt_rx_clone = stt2_rx_mutex.clone();
+            let tga2_tx_clone = tga_tx.clone();
+            let stt2_rx_clone = stt_rx_mutex.clone();
 
             let whisper_mutex_clone = whisper_mutex.clone();
 
@@ -257,6 +249,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tokio::task::spawn(async move {
                 let stats_clone_inside = stats_clone.clone();
 
+                let tx;
+                let rx;
+
+                if stats_clone.lock().await.models() > 1 {
+                    tx = tga_tx_clone.clone();
+                    rx = stt_rx_clone.clone();
+                } else {
+                    tx = tga2_tx_clone.clone();
+                    rx = stt2_rx_clone.clone();
+                }
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(
                         io,
@@ -265,8 +267,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             api_handler(
                                 req,
                                 &whisper_mutex_clone,
-                                tga_tx_clone.clone(),
-                                stt_rx_clone.clone(),
+                                tx.clone(),
+                                rx.clone(),
                                 stats_clone_inside,
                             )
                         }),
