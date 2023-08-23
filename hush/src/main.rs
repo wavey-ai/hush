@@ -66,6 +66,7 @@ async fn api_handler(
                     } else {
                         let _ = tga_tx.send(mel);
                     }
+                    dbg!(models);
                     let stt_result = stt_rx.lock().await.recv().await.unwrap();
                     stt_result.text
                 };
@@ -156,10 +157,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let whisper_mutex = Arc::new(Mutex::new(0));
     let stats = Arc::new(Mutex::new(Stats::new()));
 
-    let (loader_tx, loader_rx): (Sender<u8>, Receiver<u8>) = bounded(1);
     let (tga_tx, mut tga_rx) = unbounded_channel::<Vec<u8>>();
-    let (stt_tx, stt_rx) = unbounded_channel::<SttResult>();
     let (tga2_tx, mut tga2_rx) = unbounded_channel::<Vec<u8>>();
+    let (stt_tx, stt_rx) = unbounded_channel::<SttResult>();
     let stt_rx_mutex = Arc::new(Mutex::new(stt_rx));
 
     let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
@@ -179,7 +179,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             model_name,
             t.elapsed().as_secs()
         );
-        loader_tx.send(1).unwrap();
         tokio::spawn(async move {
             stats_clone_ready.lock().await.ready();
         });
@@ -202,9 +201,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let stats_clone_ready2 = stats.clone();
     let stt_tx_clone2 = stt_tx.clone();
+
     let _ = tokio::task::spawn_blocking(move || {
-        // block waiting for first model to load
-        let _ = loader_rx.recv();
         let model_name = "medium_en".to_string();
         info!("loading model {:?}", model_name);
 
@@ -242,12 +240,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let (stream, _) = listener.accept().await.unwrap();
             let io = TokioIo::new(stream);
 
-            let tga_tx_clone = tga2_tx.clone();
+            let tga_tx_clone = tga_tx.clone();
+            let tga2_tx_clone = tga2_tx.clone();
             let stt_rx_clone = stt_rx_mutex.clone();
-            let tga2_tx_clone = tga_tx.clone();
-
             let whisper_mutex_clone = whisper_mutex.clone();
-
             let stats_clone = stats_clone.clone();
 
             tokio::task::spawn(async move {
