@@ -19,7 +19,8 @@ Parameters:
     Default: g4dn.xlarge
   InstancePort:
     Type: String
-    Default: 1337
+    Default: "1337"
+
   VpcStackName:
     Type: String
     Default: live-hush-vpc
@@ -99,8 +100,8 @@ Resources:
         InstanceType: !Ref InstanceType
         InstanceMarketOptions:
           MarketType: spot
+          SpotOptions:
             SpotInstanceType: persistent
-            InstanceInterruptionBehavior: stop
         SecurityGroupIds:
           - !GetAtt InstanceSecurityGroup.GroupId
   ElbTargetGroup:
