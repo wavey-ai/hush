@@ -1,12 +1,11 @@
 #![warn(rust_2018_idioms)]
 
-use atomic::Ordering::{Relaxed, SeqCst};
 use bytes::Bytes;
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
-use futures_util::future::join;
+use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::header::{ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use log::info;
 use mel_spec::mel::interleave_frames;
@@ -14,80 +13,16 @@ use mel_spec::quant::*;
 use pretty_env_logger;
 use serde_json::{json, to_string};
 use std::net::SocketAddr;
-use std::sync::atomic::{self, AtomicBool, AtomicUsize};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
-use hyper::{Method, Request, Response, StatusCode};
-use tokio::net::TcpListener;
-use tokio::time::{interval, Duration};
-
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
 use whisper::service::MelToText;
 
 struct SttResult {
     text: String,
-}
-
-async fn api_handler(
-    req: Request<hyper::body::Incoming>,
-    whisper_mtx: &Mutex<i32>,
-    tga_tx: UnboundedSender<Vec<u8>>,
-    tga2_tx: UnboundedSender<Vec<u8>>,
-    stt_rx: Arc<Mutex<UnboundedReceiver<SttResult>>>,
-    stats: Arc<Mutex<Stats>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let models = stats.lock().await.models();
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {
-            let json_response = json!({
-              "models": models,
-              "queue": stats.lock().await.queue(),
-              "done": stats.lock().await.done(),
-            });
-            let body = to_string(&json_response).expect("JSON serialization error");
-            let mut res = Response::new(full(Bytes::from(body)).boxed());
-            cors(&mut res);
-            Ok(res)
-        }
-        (&Method::POST, "/") => {
-            if models > 0 {
-                let whole_body = req.collect().await.expect("body").to_bytes();
-                stats.lock().await.inc();
-                let text = {
-                    // we can only process one input at a time on the whisper model
-                    // TODO: a bounded(1) channel instead?
-                    let _lock = whisper_mtx.lock().await;
-                    let mel = whole_body.to_vec();
-                    if models > 1 {
-                        let _ = tga2_tx.send(mel);
-                    } else {
-                        let _ = tga_tx.send(mel);
-                    }
-                    dbg!(models);
-                    let stt_result = stt_rx.lock().await.recv().await.unwrap();
-                    stt_result.text
-                };
-                let mut res = Response::new(full(Bytes::from(text)).boxed());
-                stats.lock().await.dec();
-                cors(&mut res);
-                Ok(res)
-            } else {
-                let mut res = Response::new(empty());
-                *res.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-                cors(&mut res);
-                Ok(res)
-            }
-        }
-        // Return the 404 Not Found for other routes.
-        _ => {
-            let mut not_found = Response::new(empty());
-            *not_found.status_mut() = StatusCode::NOT_FOUND;
-            Ok(not_found)
-        }
-    }
 }
 
 fn cors(response: &mut Response<BoxBody<Bytes, hyper::Error>>) {
@@ -184,10 +119,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         while let Some(tga) = tga_rx.blocking_recv() {
-            dbg!("using tiny");
             if let Ok(frames) = parse_tga_8bit(&tga) {
                 let arr = to_array2(&frames, 80);
-                let padded = interleave_frames(&[arr], false, 1500);
+                let padded = interleave_frames(&[arr], false, 1000);
                 let text = whisper.add(&padded);
                 let result = SttResult {
                     text: text.text().to_owned(),
@@ -218,10 +152,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         while let Some(tga) = tga2_rx.blocking_recv() {
-            dbg!("using medium");
             if let Ok(frames) = parse_tga_8bit(&tga) {
                 let arr = to_array2(&frames, 80);
-                let padded = interleave_frames(&[arr], false, 1500);
+                let padded = interleave_frames(&[arr], false, 1000);
                 let text = whisper.add(&padded);
                 let result = SttResult {
                     text: text.text().to_owned(),
@@ -276,4 +209,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     srv.await;
 
     Ok(())
+}
+
+async fn api_handler(
+    req: Request<hyper::body::Incoming>,
+    whisper_mtx: &Mutex<i32>,
+    tga_tx: UnboundedSender<Vec<u8>>,
+    tga2_tx: UnboundedSender<Vec<u8>>,
+    stt_rx: Arc<Mutex<UnboundedReceiver<SttResult>>>,
+    stats: Arc<Mutex<Stats>>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let models = stats.lock().await.models();
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/") => {
+            let json_response = json!({
+              "models": models,
+              "queue": stats.lock().await.queue(),
+              "done": stats.lock().await.done(),
+            });
+            let body = to_string(&json_response).expect("JSON serialization error");
+            let mut res = Response::new(full(Bytes::from(body)).boxed());
+            cors(&mut res);
+            Ok(res)
+        }
+        (&Method::POST, "/") => {
+            if models > 0 {
+                let whole_body = req.collect().await.expect("body").to_bytes();
+                stats.lock().await.inc();
+                let text = {
+                    // we can only process one input at a time on the whisper model
+                    // TODO: a bounded(1) channel instead?
+                    let _lock = whisper_mtx.lock().await;
+                    let mel = whole_body.to_vec();
+                    if models > 1 {
+                        let _ = tga2_tx.send(mel);
+                    } else {
+                        let _ = tga_tx.send(mel);
+                    }
+                    let stt_result = stt_rx.lock().await.recv().await.unwrap();
+                    stt_result.text
+                };
+                let mut res = Response::new(full(Bytes::from(text)).boxed());
+                stats.lock().await.dec();
+                cors(&mut res);
+                Ok(res)
+            } else {
+                let mut res = Response::new(empty());
+                *res.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+                cors(&mut res);
+                Ok(res)
+            }
+        }
+        _ => {
+            let mut not_found = Response::new(empty());
+            *not_found.status_mut() = StatusCode::NOT_FOUND;
+            Ok(not_found)
+        }
+    }
 }
