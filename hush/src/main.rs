@@ -1,8 +1,5 @@
 #![warn(rust_2018_idioms)]
 
-use log::info;
-use pretty_env_logger;
-
 use atomic::Ordering::{Relaxed, SeqCst};
 use bytes::Bytes;
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
@@ -11,12 +8,14 @@ use hyper::header::{ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
+use log::info;
 use mel_spec::mel::interleave_frames;
 use mel_spec::quant::*;
+use pretty_env_logger;
 use serde_json::{json, to_string};
 use std::net::SocketAddr;
 use std::sync::atomic::{self, AtomicBool, AtomicUsize};
-use tokio::sync::oneshot;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{Method, Request, Response, StatusCode};
@@ -35,8 +34,8 @@ struct SttResult {
 async fn api_handler(
     req: Request<hyper::body::Incoming>,
     whisper_mtx: &Mutex<i32>,
-    tga_tx: Sender<Vec<u8>>,
-    stt_rx: Receiver<SttResult>,
+    tga_tx: UnboundedSender<Vec<u8>>,
+    stt_rx: Arc<Mutex<UnboundedReceiver<SttResult>>>,
     stats: Arc<Mutex<Stats>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let models = stats.lock().await.models();
@@ -60,11 +59,9 @@ async fn api_handler(
                     // we can only process one input at a time on the whisper model
                     // TODO: a bounded(1) channel instead?
                     let _lock = whisper_mtx.lock().await;
-                    tga_tx
-                        .send(whole_body.to_vec())
-                        .expect("Failed to send TGA data for processing");
+                    let _ = tga_tx.send(whole_body.to_vec());
 
-                    let stt_result = stt_rx.recv().expect("Failed to receive STT result");
+                    let stt_result = stt_rx.lock().await.recv().await.unwrap();
                     stt_result.text
                 };
                 let mut res = Response::new(full(Bytes::from(text)).boxed());
@@ -155,12 +152,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stats = Arc::new(Mutex::new(Stats::new()));
 
     let (loader_tx, loader_rx): (Sender<u8>, Receiver<u8>) = bounded(1);
+    let (tga_tx, mut tga_rx) = unbounded_channel::<Vec<u8>>();
+    let (stt_tx, mut stt_rx) = unbounded_channel::<SttResult>();
+    let (tga2_tx, mut tga2_rx) = unbounded_channel::<Vec<u8>>();
+    let (stt2_tx, mut stt2_rx) = unbounded_channel::<SttResult>();
 
-    // TODO: use tokio channels here?
-    let (tga_tx, tga_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
-    let (stt_tx, stt_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
-    let (tga2_tx, tga2_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = unbounded();
-    let (stt2_tx, stt2_rx): (Sender<SttResult>, Receiver<SttResult>) = unbounded();
+    let stt2_rx_mutex = Arc::new(Mutex::new(stt2_rx));
+    let stt_rx_mutex = Arc::new(Mutex::new(stt_rx));
 
     let addr: SocketAddr = ([0, 0, 0, 0], 1337).into();
 
@@ -183,7 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             stats_clone_ready.lock().await.ready();
         });
 
-        while let Ok(tga) = tga_rx.recv() {
+        while let Some(tga) = tga_rx.blocking_recv() {
             if let Ok(frames) = parse_tga_8bit(&tga) {
                 let arr = to_array2(&frames, 80);
                 let padded = interleave_frames(&[arr], false, 1500);
@@ -217,7 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             stats_clone_ready2.lock().await.ready();
         });
 
-        while let Ok(tga) = tga2_rx.recv() {
+        while let Some(tga) = tga2_rx.blocking_recv() {
             if let Ok(frames) = parse_tga_8bit(&tga) {
                 let arr = to_array2(&frames, 80);
                 let padded = interleave_frames(&[arr], false, 1500);
@@ -245,10 +243,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if stats_clone.lock().await.models() > 1 {
                 info!("using model 2");
                 tga_tx_clone = tga2_tx.clone();
-                stt_rx_clone = stt2_rx.clone();
+                stt_rx_clone = stt2_rx_mutex.clone();
             } else {
                 tga_tx_clone = tga_tx.clone();
-                stt_rx_clone = stt_rx.clone();
+                stt_rx_clone = stt_rx_mutex.clone();
             }
 
             let whisper_mutex_clone = whisper_mutex.clone();
