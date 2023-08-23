@@ -23,6 +23,36 @@ that uses Rust's [burn-rs](https://github.com/burn-rs/burn) Deep Learning framew
 and [tch-rs](https://github.com/LaurentMazare/tch-rs) (Rust bindings for the C++ api of PyTorch). 
 The fork provides a mel API and exposes whisper-burn as a service, and configures a CUDA backend.
 
+#### running
+
+The server will start accepting connections immediately and will load models in
+the background. To ensure quick cold starts the `tiny_en` model is always loaded
+and routed to first, with requests always being routed to the largest model 
+available. TODO: Make all this configurable, and allow model to be specified in
+the request.
+
+```
+ INFO  hush > hush server listening on 0.0.0.0:1337
+ INFO  hush > loading model "tiny_en"
+ INFO  hush > loading model "medium_en"
+ INFO  cached_path::cache > Cached version of https://huggingface.co/gpt2/resolve/main/tokenizer.json is up-to-date
+ INFO  cached_path::cache > Cached version of https://huggingface.co/gpt2/resolve/main/tokenizer.json is up-to-date
+ INFO  hush               > "tiny_en" loaded in 9 secs
+ INFO  hush               > "medium_en" loaded in 109 secs
+ ```
+
+Any GET request will return a simple status:
+
+```
+{"done":3,"models":1,"queue":0}
+
+done: number of completed requests
+queue: number of pending requests
+models:
+    0 = non loaded
+    1 = tiny_en loaded
+    2 = medium_en loaded
+```
 
 #### demo
 
@@ -74,7 +104,7 @@ Full instructions: TODO.
 
 This is very much a POC and a WIP.
 
-* Fix wasm content type with a cloud function
+* ~fix wasm content type with a cloud function~
 * Traffic light status on UI for GPU spot instance: up/down/provisioning
 * Add real-time metrics to API and visibility in UI 
 * Support for Safari, non-SIMD version.
@@ -82,6 +112,6 @@ This is very much a POC and a WIP.
 * Admin UI 
 * Add auth to EC2 service
 * WebRTC Data Channel API
-* load medium_en model by default
+* ~Load medium_en model by default~
 * Allow any audio format to be uploaded, resampling as required
 * Clients for mobile
