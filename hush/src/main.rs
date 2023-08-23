@@ -255,9 +255,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if stats_clone.lock().await.models() > 1 {
                     tx = tga_tx_clone.clone();
                     rx = stt_rx_clone.clone();
+                    info!("using model 2");
                 } else {
                     tx = tga2_tx_clone.clone();
                     rx = stt2_rx_clone.clone();
+                    info!("using model 1");
                 }
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(
