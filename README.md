@@ -23,6 +23,28 @@ that uses Rust's [burn-rs](https://github.com/burn-rs/burn) Deep Learning framew
 and [tch-rs](https://github.com/LaurentMazare/tch-rs) (Rust bindings for the C++ api of PyTorch). 
 The fork provides a mel API and exposes whisper-burn as a service, and configures a CUDA backend.
 
+#### demo
+
+Chrome is required as the demo currently uses SIMD instructions.
+
+[https://hush.wavey.ai](https://hush.wavey.ai)
+
+![demo](./doc/demo.png)
+
+The demo UI has the following components:
+
+* non-blocking WASM workers and Audio Worklets that convert audio (from file or 
+  microphone) into mel spectrograms on a stream with ultra-low latency
+* ultra-low latency voice activity detection that works by applying Sobel edge 
+  detection to spectrograms. This is used to determine were to segment streaming
+  audio for transcription (ideally always cutting between words, and not in the 
+  middle of a word.)
+* real-time visualisations on canvas
+* a client that sends audio segments as images to the AWS service running 
+  Whisper on GPU, receiving a text translation back
+
+Note that it is significantly faster with Dev Tools console closed.
+
 #### running
 
 The server will start accepting connections immediately and will load models in
@@ -53,35 +75,6 @@ models:
     1 = tiny_en loaded
     2 = medium_en loaded
 ```
-
-#### demo
-
-Chrome is required as the demo currently uses SIMD instructions.
-
-[https://hush.wavey.ai](https://hush.wavey.ai)
-
-![demo](./doc/demo.png)
-
-The demo UI has the following components:
-
-* non-blocking WASM workers and Audio Worklets that convert audio (from file or 
-  microphone) into mel spectrograms on a stream with ultra-low latency
-* ultra-low latency voice activity detection that works by applying Sobel edge 
-  detection to spectrograms. This is used to determine were to segment streaming
-  audio for transcription (ideally always cutting between words, and not in the 
-  middle of a word.)
-* real-time visualisations on canvas
-* a client that send audio segments as images to the AWS service running 
-  Whisper on GPU, receiving a text translation back
-
-The demo currently uses the tiny_en model, since the medium model takes a few 
-minutes to load into memory and I don't know how often spot instances will be
-cycled - TODO.
-
-(Inference is just as quick with the medium model, once it is loaded, and the 
-results are far better.)
-
-Note that it is significantly faster with Dev Tools console closed.
 
 #### deployment
 
