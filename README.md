@@ -106,7 +106,7 @@ This is very much a POC and a WIP.
 
 * ~fix wasm content type with a cloud function~
 * Traffic light status on UI for GPU spot instance: up/down/provisioning
-* Add real-time metrics to API and visibility in UI 
+* ~Add real-time metrics to API~ and visibility in UI 
 * Support for Safari, non-SIMD version.
 * Support Web GPU (AWS G4ad instance w/AMD Radeon Pro V520 GPU)
 * Admin UI 
