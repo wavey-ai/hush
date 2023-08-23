@@ -243,6 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let stt_rx_clone;
 
             if stats_clone.lock().await.models() > 1 {
+                info!("using model 2");
                 tga_tx_clone = tga2_tx.clone();
                 stt_rx_clone = stt2_rx.clone();
             } else {
