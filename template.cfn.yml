@@ -23,7 +23,7 @@ Parameters:
 
   VpcStackName:
     Type: String
-    Default: live-hush-vpc
+    Default: live-wavey-vpc
 
   CodeStarConnectionArn:
     Type: String

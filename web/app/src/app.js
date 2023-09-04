@@ -198,7 +198,7 @@ async function startWorker() {
   await wasm_bindgen();
   await wasm_bindgen_wav();
 
-  pcm_worker = startup("/__rev__/worker.js");
+  pcm_worker = startup_mel("/__rev__/worker.js");
   wav_worker = startup_wav("/__rev__/wav_worker.js");
 
   setTimeout(() => {
