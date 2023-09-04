@@ -195,7 +195,7 @@ document.addEventListener("DOMContentLoaded", async function() {
 });
 
 async function startWorker() {
-  await wasm_bindgen();
+  await wasm_bindgen_mel();
   await wasm_bindgen_wav();
 
   pcm_worker = startup_mel("/__rev__/worker.js");
