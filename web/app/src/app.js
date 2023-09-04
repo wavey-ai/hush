@@ -1,4 +1,4 @@
-const { startup } = wasm_bindgen;
+const { startup: startup_mel } = wasm_bindgen_mel;
 const { startup: startup_wav } = wasm_bindgen_wav;
 
 const canvas = document.getElementById("canvas");
