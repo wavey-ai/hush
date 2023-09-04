@@ -101,7 +101,7 @@ Resources:
         InstanceMarketOptions:
           MarketType: spot
           SpotOptions:
-            SpotInstanceType: persistent
+            SpotInstanceType: one-time
         SecurityGroupIds:
           - !GetAtt InstanceSecurityGroup.GroupId
   ElbTargetGroup:
