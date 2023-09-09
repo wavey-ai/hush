@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Timeout: 15
+
+Parameters:
+  StageName:
+    Type: String
+
+  Certificate:
+    Type: String
+
+  DomainName:
+    Type: String
+
+  HostedZoneId:
+    Type: String
+
+  Subdomain:
+    Type: String
+
+Conditions:
+  IsProd: !Equals [ !Ref StageName, 'live' ]
+
+Resources:
+  DistributionBucket:
+    Type: AWS::S3::Bucket
+
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+
+  Route53SubdomainAliasRecord:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub
+        - "${Subdomain}.${Domain}"
+        - Subdomain: !If [IsProd, !Ref Subdomain, !Sub '${StageName}-${Subdomain}']
+          Domain: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # This is a fixed value for CloudFront distributions
+        DNSName: !GetAtt Distribution.DomainName
+
+  DistributionBucketReadPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DistributionBucket
+      PolicyDocument:
+       Statement:
+       - Action: 's3:GetObject'
+         Effect: Allow
+         Resource: !Sub 'arn:aws:s3:::${DistributionBucket}/*'
+         Principal:
+           CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Sub
+            - '${Subdomain}.${Domain}'
+            - Subdomain: !If [IsProd, !Ref Subdomain, !Sub '${StageName}-${Subdomain}']
+              Domain: !Ref DomainName
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Certificate
+          SslSupportMethod: sni-only
+        Logging:
+          Bucket: !GetAtt LoggingBucket.DomainName
+          IncludeCookies : true
+          Prefix: "app-cloudfront/"
+        Enabled: true
+        Origins:
+        - DomainName: !GetAtt DistributionBucket.DomainName
+          Id: myS3Origin
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
+        Comment: Amazon CloudFront
+        DefaultRootObject: index.html
+        CacheBehaviors:
+        - PathPattern: "*.wasm"
+          AllowedMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          Compress: true
+          ResponseHeadersPolicyId: !Ref WasmResponseHeadersPolicy
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # disabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # all sans host
+          TargetOriginId: myS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          ForwardedValues:
+            QueryString: 'true'
+            Headers:
+              - '*'
+            Cookies:
+              Forward: 'all'
+
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          ResponseHeadersPolicyId: !Ref ResponseHeadersPolicy
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # disabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # all sans host
+          TargetOriginId: myS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          ForwardedValues:
+            QueryString: 'true'
+            Headers:
+              - '*'
+            Cookies:
+              Forward: 'all'
+          MinTTL: 900
+          MaxTTL: 900
+          DefaultTTL: 900
+
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref AWS::StackName
+
+  WasmResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-wasm-response-headers-policy
+        CustomHeadersConfig:
+          Items:
+            - Header: 'Content-Type'
+              Value: 'application/wasm'
+              Override: true
+
+  ResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-security-response-headers-policy
+        CorsConfig:
+          AccessControlAllowCredentials: true
+          AccessControlAllowHeaders:
+            Items:
+              - 'Range'
+              - 'Origin'
+              - 'Authorization'
+              - 'If-Range'
+              - 'If-Match'
+              - 'If-None-Match'
+              - 'If-Modified-Since'
+              - 'Cookie'
+              - 'Referer'
+              - 'Accept'
+              - 'Accept-Encoding'
+              - 'Accept-Ranges'
+          AccessControlAllowMethods:
+            Items:
+              - ALL
+          AccessControlAllowOrigins:
+            Items:
+              - !Sub
+                - '${Subdomain}.${Domain}'
+                - Subdomain: !If [IsProd, !Ref Subdomain, !Sub '${StageName}-${Subdomain}']
+                  Domain: !Ref DomainName
+              - 'http://localhost:8181'
+          OriginOverride: true
+        CustomHeadersConfig:
+          Items:
+            - Header: 'Cross-Origin-Opener-Policy'
+              Value: 'same-origin'
+              Override: true
+            - Header: 'Cross-Origin-Embedder-Policy'
+              Value: 'require-corp'
+              Override: true
+
+Outputs:
+  DistributionBucket:
+    Description: bucket name backing non-gated cloudfront distribution
+    Value: !Ref DistributionBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+

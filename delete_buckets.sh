@@ -1,7 +1,7 @@
 #!/bin/bash
 
-keyword1="wavey"
-keyword2="hush"
+keyword1="Logs"
+keyword2="gatedcdn"
 
 # Get a list of bucket names
 bucket_names=$(aws s3api list-buckets --query "Buckets[].Name" --output text)

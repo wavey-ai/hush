@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  EdgeAuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt EdgeAuthRole.Arn
+      CodeUri:
+        Bucket: "live-shared-artifactsbucket-15t4ydm2ugbkv" #Fn::ImportValue !Sub '${StageName}-shared-ArtifactsBucketName'
+        Key: __rev__/test-auth-token/function.zip
+      Runtime: nodejs18.x
+      Handler: main.handler
+      Timeout: 5
+      AutoPublishAlias: LIVE
+      DeploymentPreference:
+        Enabled: true
+        Type: AllAtOnce
+
+  EdgeAuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+                - 'edgelambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: EdgeAuthPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+
+Outputs:
+  FunctionVersion:
+    Description: "Exported Lambda Function Version"
+    Value:
+      Ref: EdgeAuthFunction.Version
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionVersion"

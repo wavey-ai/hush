@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  CodeStarConnectionArn:
+    Type: String
+
+Resources:
+  PipelineRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+                - cloudformation.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-CodePipelineAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "apigateway:*"
+                  - "cloudformation:*"
+                  - "codebuild:*"
+                  - "codedeploy:*"
+                  - "codepipeline:*"
+                  - "cognito-idp:*"
+                  - "cloudfront:*"
+                  - "dynamodb:*"
+                  - "ec2:*"
+                  - "ecr:*"
+                  - "events:*"
+                  - "iam:AttachRolePolicy"
+                  - "iam:CreatePolicy"
+                  - "iam:CreateRole"
+                  - "iam:DeleteRole"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:DetachRolePolicy"
+                  - "iam:GetRole"
+                  - "iam:GetRolePolicy"
+                  - "iam:PassRole"
+                  - "iam:PutRolePolicy"
+                  - "lambda:*"
+                  - "logs:*"
+                  - "route53:*"
+                  - "s3:*"
+                  - "sqs:*"
+                  - "sns:*"
+                Resource: "*"
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AWS::StackName}-*'
+              - Effect: Allow
+                Action:
+                  - "codestar-connections:UseConnection"
+                  - "codestar-connections:PassConnection"
+                Resource: !Ref CodeStarConnectionArn
+      RoleName: !Sub ${AWS::StackName}-PipelineRole
+
+Outputs:
+  PipelineRoleArn:
+    Description: PipelineRoleArn
+    Value: !Ref PipelineRole
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineRoleArn"
+

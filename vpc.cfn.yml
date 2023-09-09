@@ -28,7 +28,7 @@ Parameters:
     Default: 10.1.6.0/24
 
 Resources:
-  VPC:
+  Vpc:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: !Ref VpcCIDR
@@ -49,12 +49,12 @@ Resources:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
 
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       AvailabilityZone: !Select [ 0, !GetAZs "" ]
       CidrBlock: !Ref PublicSubnet1CIDR
       MapPublicIpOnLaunch: true
@@ -65,7 +65,7 @@ Resources:
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       AvailabilityZone: !Select [ 1, !GetAZs  "" ]
       CidrBlock: !Ref PublicSubnet2CIDR
       MapPublicIpOnLaunch: true
@@ -76,7 +76,7 @@ Resources:
   PublicSubnet3:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       AvailabilityZone: !Select [ 2, !GetAZs "" ]
       CidrBlock: !Ref PublicSubnet3CIDR
       MapPublicIpOnLaunch: true
@@ -87,7 +87,7 @@ Resources:
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       AvailabilityZone: !Select [ 0, !GetAZs  "" ]
       CidrBlock: !Ref PrivateSubnet1CIDR
       MapPublicIpOnLaunch: false
@@ -98,7 +98,7 @@ Resources:
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       AvailabilityZone: !Select [ 1, !GetAZs  "" ]
       CidrBlock: !Ref PrivateSubnet2CIDR
       MapPublicIpOnLaunch: false
@@ -108,7 +108,7 @@ Resources:
   PrivateSubnet3:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       AvailabilityZone: !Select [ 2, !GetAZs  "" ]
       CidrBlock: !Ref PrivateSubnet3CIDR
       MapPublicIpOnLaunch: false
@@ -119,7 +119,7 @@ Resources:
   PublicRouteTable1:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName} Public Routes 1"
@@ -133,7 +133,7 @@ Resources:
   PublicRouteTable2:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName} Public Routes 2"
@@ -147,7 +147,7 @@ Resources:
   PublicRouteTable3:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName} Public Routes 3"
@@ -169,7 +169,7 @@ Resources:
   PrivateRouteTable1:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName} Private Routes (AZ1)"
@@ -183,7 +183,7 @@ Resources:
   PrivateRouteTable2:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName} Private Routes (AZ2)"
@@ -197,7 +197,7 @@ Resources:
   PrivateRouteTable3:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName} Private Routes (AZ3)"
@@ -212,7 +212,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub "${AWS::StackName} OpenSecurityGroup"
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 0
@@ -228,14 +228,14 @@ Resources:
         - !Ref PrivateRouteTable3
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
       VpcEndpointType: Gateway
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
 
   VpcEndpointDynamodb:
     Type: AWS::EC2::VPCEndpoint
     Properties:
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.dynamodb"
       VpcEndpointType: Gateway
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       RouteTableIds:
         - !Ref PrivateRouteTable1
         - !Ref PrivateRouteTable2
@@ -252,7 +252,7 @@ Resources:
         - !Ref PrivateSubnet2
         - !Ref PrivateSubnet3
       VpcEndpointType: Interface
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       PrivateDnsEnabled: true
 
   VpcEndpointEcrDkr:
@@ -266,7 +266,7 @@ Resources:
         - !Ref PrivateSubnet2
         - !Ref PrivateSubnet3
       VpcEndpointType: Interface
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       PrivateDnsEnabled: true
 
   VpcEndpointLogs:
@@ -280,7 +280,7 @@ Resources:
         - !Ref PrivateSubnet2
         - !Ref PrivateSubnet3
       VpcEndpointType: Interface
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       PrivateDnsEnabled: true
 
   VpcEndpointSQS:
@@ -294,13 +294,27 @@ Resources:
         - !Ref PrivateSubnet2
         - !Ref PrivateSubnet3
       VpcEndpointType: Interface
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
+      PrivateDnsEnabled: true
+
+  VpcEndpointRDS:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      SecurityGroupIds:
+        - !Ref OpenSecurityGroup
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.rds"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+      VpcEndpointType: Interface
+      VpcId: !Ref Vpc
       PrivateDnsEnabled: true
 
 Outputs:
-  VPCId:
+  VpcId:
     Description: The ID of the VPC
-    Value: !Ref VPC
+    Value: !Ref Vpc
     Export:
       Name: !Sub "${AWS::StackName}-VpcId"
 

@@ -1,0 +1,13 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+
+Outputs:
+  ArtifactsBucket:
+    Description: Lambda code zips
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-ArtifactsBucketName"
+
