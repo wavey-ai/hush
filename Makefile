@@ -116,5 +116,3 @@ api:
 			AppSubdomain=app \
 			ApiSubdomain=api \
 			StageName=$(ENV)
-
-
