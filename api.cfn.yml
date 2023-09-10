@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  StageName:
+    Type: String
+  Certificate:
+    Type: String
+  DomainName:
+    Type: String
+
+  HostedZoneId:
+    Type: String
+
+  ApiSubdomain:
+    Type: String
+    Default: api
+
+  AppSubdomain:
+    Type: String
+    Default: api
+
+Conditions:
+  IsProd: !Equals [ !Ref StageName, 'live' ]
+
+Resources:
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+
+  HttpApiGetStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt LambdaRole.Arn
+      CodeUri:
+        Bucket: "live-shared-artifactsbucket-15t4ydm2ugbkv" #Fn::ImportValue !Sub '${StageName}-shared-ArtifactsBucketName'
+        Key: __rev__/get-status/function.zip
+      Handler: bootstrap
+      Runtime: provided.al2
+      Architectures:
+        - arm64
+      Environment:
+        Variables:
+          API_KEY: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:test_api_key}}'
+          - SecretId: !Sub ${AWS::StackName}
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /up
+            TimeoutInMillis: 3000
+            PayloadFormatVersion: "2.0"
+            RouteSettings:
+              ThrottlingBurstLimit: 600
+          Version: 2.0
+      AutoPublishAlias: LIVE
+      DeploymentPreference:
+        Enabled: true
+        Type: AllAtOnce
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        Authorizers:
+          MyAuthorizer:
+            JwtConfiguration:
+              Issuer:
+                Fn::Sub:
+                  - "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+                  - UserPool:
+                      Fn::ImportValue:
+                        Fn::Sub: "${StageName}-auth-UserPoolId"
+              Audience:
+                - Fn::ImportValue:
+                    Fn::Sub: "${StageName}-auth-UserPoolClientId"
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: MyAuthorizer
+      StageName: !Ref StageName
+      AccessLogSettings:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: $context.requestId
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 200
+      StageVariables:
+        StageVar: Value
+      FailOnWarnings: true
+      Domain:
+        DomainName: !Sub
+          - "${Subdomain}-${Region}.${Domain}"
+          - Subdomain: !Sub ${StageName}-${ApiSubdomain}
+            Domain: !Ref DomainName
+            Region: !Ref AWS::Region
+        CertificateArn: !Ref Certificate
+        EndpointConfiguration: REGIONAL
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub
+            - "https://${Subdomain}.${Domain}"
+            - Subdomain: !If [IsProd, !Ref AppSubdomain, !Sub '${StageName}-${AppSubdomain}']
+              Domain: !Ref DomainName
+          - !Sub
+            - "https://${Subdomain}.${Domain}"
+            - Subdomain: !If [IsProd, !Ref ApiSubdomain, !Sub '${StageName}-${ApiSubdomain}']
+              Domain: !Ref DomainName
+          - !Sub http://localhost:8181
+        AllowHeaders:
+          - 'Authorization'
+          - 'Content-Type'
+          - 'X-Requested-With'
+          - 'Accept'
+        AllowMethods:
+          - 'GET'
+          - 'PUT'
+          - 'POST'
+          - 'DELETE'
+          - 'OPTIONS'
+        MaxAge: 300
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
