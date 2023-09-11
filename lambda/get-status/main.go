@@ -27,7 +27,7 @@ type handler struct {
 }
 
 func (h handler) handleRequest(ctx context.Context, event events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	user, ok := event.RequestContext.Authorizer.JWT.Claims["cognito:username"]
+	user, ok := event.RequestContext.Authorizer.JWT.Claims["username"]
 	if ok {
 		h.log.Info().Msgf("Got user %s from claims", user)
 	} else {

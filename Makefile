@@ -115,4 +115,5 @@ api:
 			HostedZoneId=$(HOSTED_ZONE_ID) \
 			AppSubdomain=app \
 			ApiSubdomain=api \
-			StageName=$(ENV)
+			StageName=$(ENV) \
+			DeployBucket=$(DEPLOY_BUCKET)

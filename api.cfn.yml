@@ -2,6 +2,9 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 
 Parameters:
+  DeployBucket:
+    Type: String
+
   StageName:
     Type: String
   Certificate:
@@ -18,7 +21,7 @@ Parameters:
 
   AppSubdomain:
     Type: String
-    Default: api
+    Default: app
 
 Conditions:
   IsProd: !Equals [ !Ref StageName, 'live' ]
@@ -32,7 +35,7 @@ Resources:
     Properties:
       Role: !GetAtt LambdaRole.Arn
       CodeUri:
-        Bucket: "live-shared-artifactsbucket-15t4ydm2ugbkv" #Fn::ImportValue !Sub '${StageName}-shared-ArtifactsBucketName'
+        Bucket: !Ref DeployBucket #Fn::ImportValue !Sub '${StageName}-shared-ArtifactsBucketName'
         Key: __rev__/get-status/function.zip
       Handler: bootstrap
       Runtime: provided.al2
@@ -135,3 +138,14 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+Outputs:
+  HttpApiHostname:
+    Description: Well known URL
+    Value: !Sub
+      - "${Subdomain}-${Region}.${Domain}"
+      - Subdomain: !Sub ${StageName}-${ApiSubdomain}
+        Domain: !Ref DomainName
+        Region: !Ref AWS::Region
+    Export:
+      Name: !Sub "${AWS::StackName}-HttpApiHostname"
