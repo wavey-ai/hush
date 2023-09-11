@@ -7,15 +7,6 @@ ecr:
 touch:
 	openssl rand -base64 12 > lambda/test-auth-token/.touch
 
-.PHONY: cp_zips
-cp_zips:
-	cd ./lambda/test-auth-token && \
-		aws s3 cp build/function.zip s3://$(DEPLOY_BUCKET)/latest/test-auth-token/
-
-.PHONY: build_zips
-build_zips:
-	cd ./lambda/test-auth-token && make build
-
 .PHONY: roles
 roles:
 	aws cloudformation deploy \
@@ -47,7 +38,8 @@ vpc:
 
 .PHONY: edgeauth
 edgeauth:
-	cd ./lambda/test-auth-token && make build
+	cd ./lambda/test-auth-token && make build \
+		aws s3 cp build/function.zip s3://$(DEPLOY_BUCKET)/latest/test-auth-token/
 	./edgeauth.sh
 	aws cloudformation deploy \
 		--region us-east-1 \
