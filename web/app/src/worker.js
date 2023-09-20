@@ -43,7 +43,7 @@ async function init_wasm_in_worker() {
       while (true) {
         let samples = pcmBuf.pop();
         if (samples) {
-          const res = mod.add(samples);
+          const res = mod.add(samples, true);
           if (res.ok) {
             const data = new Uint8ClampedArray(res.frame.length + 8);
             data.set(res.frame);
