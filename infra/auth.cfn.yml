@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  StageName:
+    Type: String
+  Certificate:
+    Type: String
+  DomainName:
+    Type: String
+  HostedZoneId:
+    Type: String
+  OidcSubdomain:
+    Type: String
+    Default: sso
+  AppSubdomain:
+    Type: String
+    Default: app
+
+Conditions:
+  IsProd: !Equals [ !Ref StageName, 'live' ]
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UserPoolName: !Ref AWS::StackName
+      UsernameAttributes:
+        - email
+      Schema:
+        - AttributeDataType: String
+          Name: name
+          Mutable: true
+          Required: false
+
+  AppleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      ProviderName: SignInWithApple
+      ProviderType: SignInWithApple
+      UserPoolId: !Ref UserPool
+      AttributeMapping:
+        name: name
+        email: email
+        sub: username
+      ProviderDetails:
+        client_id: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:apple_client_id}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        team_id: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:apple_team_id}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        key_id: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:apple_key_id}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        private_key: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:apple_private_key}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        authorize_scopes: "name email"
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      ProviderName: Google
+      ProviderType: Google
+      UserPoolId: !Ref UserPool
+      AttributeMapping:
+        email: email
+        name: name
+      ProviderDetails:
+        client_id: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:google_client_id}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        client_secret: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:google_client_secret}}'
+          - SecretId: !Sub ${AWS::StackName}-oidc
+        authorize_scopes: "email openid profile"
+
+  UserPoolClient:
+    DependsOn: AppleIdentityProvider
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref AWS::StackName
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AccessTokenValidity: 24
+      IdTokenValidity: 24
+      RefreshTokenValidity: 24
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: hours
+      SupportedIdentityProviders:
+        - Google
+        - SignInWithApple
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - email
+        - openid
+      CallbackURLs:
+        - !Sub
+          - "https://${Subdomain}.${Domain}"
+          - Subdomain: !If [IsProd, !Ref AppSubdomain, !Sub '${StageName}-${AppSubdomain}']
+            Domain: !Ref DomainName
+      LogoutURLs:
+        - !Sub
+            - "https://${Subdomain}.${Domain}/_logout"
+            - Subdomain: !If [IsProd, 'sso', !Sub '${StageName}-sso']
+              Domain: !Ref DomainName
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain:
+        !Sub
+          - '${Subdomain}-${Region}.${Domain}'
+          - Subdomain: !Sub '${StageName}-${OidcSubdomain}'
+            Domain: !Ref DomainName
+            Region: !Ref AWS::Region
+      CustomDomainConfig:
+        CertificateArn: !Ref Certificate
+
+  Route53OidcRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name:
+        !Sub
+          - '${Subdomain}-${Region}.${Domain}'
+          - Subdomain: !Sub '${StageName}-${OidcSubdomain}'
+            Domain: !Ref DomainName
+            Region: !Ref AWS::Region
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # fixed value for CloudFront
+        DNSName: !GetAtt UserPoolDomain.CloudFrontDistribution
+
+
+Outputs:
+  UserPoolId:
+    Description: UserPoool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+  UserPoolClientId:
+    Description: UserPooolClient ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+  UserPoolDomain:
+    Description: UserPooolDomain
+    Value: !Ref UserPoolDomain
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolDomain"
