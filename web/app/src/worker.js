@@ -1,7 +1,7 @@
 importScripts("/__rev__/mel_spec_pipeline.js");
 importScripts("/__rev__/ringbuffer.js");
 
-const { SpeechToMel } = wasm_bindgen;
+const { SpeechToMel } = wasm_bindgen_mel;
 
 const instance = wasm_bindgen("/__rev__/mel_spec_pipeline_bg.wasm");
 
