@@ -7,7 +7,7 @@ Resources:
     Properties:
       Role: !GetAtt EdgeAuthRole.Arn
       CodeUri:
-        Bucket: "live-shared-artifactsbucket-15t4ydm2ugbkv" #Fn::ImportValue !Sub '${StageName}-shared-ArtifactsBucketName'
+        Bucket: "live-shared-artifactsbucket-14evpqz0p5qwu" #Fn::ImportValue !Sub '${StageName}-shared-ArtifactsBucketName'
         Key: __rev__/test-auth-token/function.zip
       Runtime: nodejs18.x
       Handler: main.handler

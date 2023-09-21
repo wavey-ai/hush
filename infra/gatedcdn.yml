@@ -12,7 +12,7 @@ Resources:
               EventType: viewer-request
               LambdaFunctionARN: !Sub
                 - '{{resolve:ssm:${SSMParameterName}}}'
-                - SSMParameterName: !Sub "${StageName}-edgeauth-FunctionVersion"
+                - SSMParameterName: !Sub "${StageName}-hush-edgeauth-FunctionVersion"
           AllowedMethods:
           - GET
           - HEAD
@@ -38,4 +38,4 @@ Resources:
               EventType: viewer-request
               LambdaFunctionARN: !Sub
                 - '{{resolve:ssm:${SSMParameterName}}}'
-                - SSMParameterName: !Sub "${StageName}-edgeauth-FunctionVersion:__version__"
+                - SSMParameterName: !Sub "${StageName}-hush-edgeauth-FunctionVersion:__version__"

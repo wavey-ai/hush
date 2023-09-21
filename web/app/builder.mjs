@@ -38,7 +38,7 @@ const buildParams = {
   color: true,
   entryPoints: ["src/index.jsx"],
   loader: { ".js": "jsx", ".json": "json", ".png": "file", ".jpeg": "file", ".jpg": "file", ".svg": "file" },
-  outdir: "build",
+  outdir: "dist",
   minify: !isWatch,
   format: "cjs",
   bundle: true,
@@ -56,13 +56,13 @@ const buildParams = {
 
 // Clean build folder
 try {
-  fs.removeSync("build");
+  fs.removeSync("dist");
 } catch (err) {
   console.error(err);
 }
 // Copy public folder into build folder
 try {
-  fs.copySync("public", "build");
+  fs.copySync("public", "dist");
 } catch (err) {
   console.error(err);
 }

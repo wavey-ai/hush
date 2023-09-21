@@ -38,12 +38,10 @@ vpc:
 
 .PHONY: edgeauth
 edgeauth:
-	cd ./lambda/test-auth-token && make build \
-		aws s3 cp build/function.zip s3://$(DEPLOY_BUCKET)/latest/test-auth-token/
-	./edgeauth.sh
-	aws cloudformation deploy \
+	cd lambda/test-auth-token && make build
+	./edgeauth.sh && aws cloudformation deploy \
 		--region us-east-1 \
-		--stack-name $(ENV)-edgeauth \
+		--stack-name $(ENV)-$(STACK_NAME)-edgeauth \
 		--template-file /tmp/edgeauth.cfn.yml \
 		--capabilities CAPABILITY_NAMED_IAM
 
@@ -51,14 +49,16 @@ edgeauth:
 auth:
 	aws cloudformation deploy \
 		--region $(REGION) \
-		--stack-name $(ENV)-auth \
+		--stack-name $(ENV)-$(STACK_NAME)-auth \
 		--template-file auth.cfn.yml \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--parameter-overrides \
 			Certificate=$(CERTIFICATE_ARN) \
 			DomainName=$(DOMAIN_NAME) \
 			HostedZoneId=$(HOSTED_ZONE_ID) \
-			StageName=$(ENV)
+			StageName=$(ENV) \
+			AppSubdomain=$(STACK_NAME) \
+			OidcSubdomain=sso-$(STACK_NAME)
 
 .PHONY: opencdn
 opencdn:
@@ -81,7 +81,7 @@ gatedcdn:
 	./gatedcdn.sh
 	aws cloudformation deploy \
 		--region us-east-1 \
-		--stack-name $(ENV)-gatedcdn \
+		--stack-name $(ENV)-$(STACK_NAME)-gatedcdn \
 		--template-file /tmp/gatedcdn.yml \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--parameter-overrides \
@@ -89,7 +89,7 @@ gatedcdn:
 			DomainName=$(DOMAIN_NAME) \
 			HostedZoneId=$(HOSTED_ZONE_ID) \
 			StageName=$(ENV) \
-			Subdomain=app
+			Subdomain=$(STACK_NAME)
 
 .PHONY: api
 api:
@@ -105,7 +105,7 @@ api:
 			Certificate=$(CERTIFICATE_ARN_REGIONAL) \
 			DomainName=$(DOMAIN_NAME) \
 			HostedZoneId=$(HOSTED_ZONE_ID) \
-			AppSubdomain=app \
-			ApiSubdomain=api \
+			AppSubdomain=$(STACK_NAME) \
+			ApiSubdomain=api-$(STACK_NAME) \
 			StageName=$(ENV) \
 			DeployBucket=$(DEPLOY_BUCKET)

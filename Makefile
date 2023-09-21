@@ -18,23 +18,8 @@ vpc:
 
 .PHONY: app
 app:
-	cfn-lint template.cfn.yml
-	aws cloudformation deploy \
-	 --region $(REGION) \
-	 --stack-name $(ENV)-${STACK_NAME} \
-		--template-file template.cfn.yml \
-		--capabilities CAPABILITY_NAMED_IAM \
-		--parameter-overrides \
-			PipelineOnly=yes \
-			RepositoryId=wavey-ai/hush \
-			CertificateArn=$(CERTIFICATE_ARN) \
-			DomainName=$(DOMAIN_NAME) \
-			HostedZoneId=$(HOSTED_ZONE_ID) \
-			StageName=$(ENV) \
-			CodeStarConnectionArn=$(CODESTAR_CONNECTION_ARN) \
-			BranchName=$(BRANCH_NAME) \
-			AmiId=$(AMI_ID) \
-			InstancePort=1337
+	./app.sh
+	aws s3 sync .artifacts/web/app s3://$(GATED_BUCKET)
 
 .PHONY: cp_zips
 cp_zips:
