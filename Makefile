@@ -18,6 +18,7 @@ vpc:
 
 .PHONY: app
 app:
+	cd web/app && make build
 	./app.sh
 	aws s3 sync .artifacts/web/app s3://$(GATED_BUCKET)
 
