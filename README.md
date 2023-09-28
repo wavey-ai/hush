@@ -1,4 +1,4 @@
-# $${\color{pink}🤫hush}$$
+$${\huge \color{pink}🤫hush}$$
 ### Silent Whisper inference for privacy and performance.
 
 Current speech-to-text wrappers tend to require audio input, even though all 
