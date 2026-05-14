@@ -41,13 +41,21 @@ const vadSettings = {
 const vadGate = {
   onFrames: 7,
   offFrames: 12,
-  minPatternScore: 0.55,
+  minPatternScore: 0.45,
+  minHorizontalBands: 3,
   minSpeechFrames: 35,
   minSpeechRatio: 0.22,
   minSegmentFrames: 140,
   maxPreSpeechFrames: 35,
   trailingSilenceFrames: 12,
 };
+
+const speechBand = {
+  start: 4,
+  end: 72,
+};
+
+const sobelOverlayThreshold = 0.12;
 
 let melSab;
 let melBuf;
@@ -253,7 +261,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260514-7"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260514-9"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -314,7 +322,13 @@ function emptyPatternComponents() {
 function updateComponentScores(components) {
   for (const [key, element] of Object.entries(componentScoreElements)) {
     const value = components[key];
-    setStatus(element, Number.isFinite(value) ? value.toFixed(2) : "0.00");
+    const formatted =
+      key === "bands"
+        ? String(Math.round(Number.isFinite(value) ? value : 0))
+        : Number.isFinite(value)
+          ? value.toFixed(2)
+          : "0.00";
+    setStatus(element, formatted);
   }
 }
 
@@ -346,6 +360,95 @@ function frequencyEdges(values, start, end) {
   }
 
   return edges;
+}
+
+function sobelEdgesForTriplet(prev, mid, next, start, end) {
+  const edges = Array.from({ length: nMels }, () => null);
+  const from = Math.max(start + 1, 1);
+  const to = Math.min(end - 1, nMels - 1);
+
+  for (let i = from; i < to; i++) {
+    const timeGradient =
+      next[i - 1] +
+      2 * next[i] +
+      next[i + 1] -
+      (prev[i - 1] + 2 * prev[i] + prev[i + 1]);
+    const frequencyGradient =
+      prev[i + 1] +
+      2 * mid[i + 1] +
+      next[i + 1] -
+      (prev[i - 1] + 2 * mid[i - 1] + next[i - 1]);
+    const temporal = clamp01(Math.abs(timeGradient) / 4);
+    const horizontal = clamp01(Math.abs(frequencyGradient) / 4);
+    const magnitude = clamp01(Math.hypot(timeGradient, frequencyGradient) / 4);
+
+    if (magnitude >= sobelOverlayThreshold) {
+      edges[i] = {
+        magnitude,
+        horizontal,
+        temporal,
+      };
+    }
+  }
+
+  return edges;
+}
+
+function sobelEdgeColumn(history, start, end) {
+  if (history.length < 3) {
+    return [];
+  }
+
+  return sobelEdgesForTriplet(
+    history[history.length - 3],
+    history[history.length - 2],
+    history[history.length - 1],
+    start,
+    end
+  );
+}
+
+function sustainedSobelStructure(history, start, end) {
+  const columns = [];
+  const from = Math.max(2, history.length - 10);
+
+  for (let i = from; i < history.length; i++) {
+    columns.push(
+      sobelEdgesForTriplet(history[i - 2], history[i - 1], history[i], start, end)
+    );
+  }
+
+  if (columns.length < 4) {
+    return { bins: [], score: 0 };
+  }
+
+  const sustainedBins = [];
+  for (let bin = start + 1; bin < end - 1; bin++) {
+    let run = 0;
+    let maxRun = 0;
+
+    for (const column of columns) {
+      const edge = column[bin];
+      const isHorizontal =
+        edge && edge.horizontal >= 0.1 && edge.horizontal >= edge.temporal * 0.7;
+
+      if (isHorizontal) {
+        run++;
+        maxRun = Math.max(maxRun, run);
+      } else {
+        run = 0;
+      }
+    }
+
+    if (maxRun >= 4) {
+      sustainedBins.push(bin);
+    }
+  }
+
+  return {
+    bins: sustainedBins,
+    score: clamp01((sustainedBins.length - 2) / 10),
+  };
 }
 
 function sustainedEdgeStructure(history, start, end) {
@@ -435,22 +538,33 @@ function sustainedRidgeStructure(history, start, end) {
   };
 }
 
-function harmonicSpacingScore(bins) {
-  if (bins.length < 3) {
-    return 0;
-  }
-
+function groupBins(bins, maxGap = 2) {
   const groups = [];
   for (const bin of bins) {
     const group = groups[groups.length - 1];
-    if (group && bin - group[group.length - 1] <= 2) {
+    if (group && bin - group[group.length - 1] <= maxGap) {
       group.push(bin);
     } else {
       groups.push([bin]);
     }
   }
 
+  return groups;
+}
+
+function harmonicSpacingScore(bins) {
+  if (bins.length < 3) {
+    return 0;
+  }
+
+  const groups = groupBins(bins);
   return clamp01((groups.length - 2) / 6) * clamp01((12 - groups.length) / 8);
+}
+
+function countHorizontalBands(ridgeBins, sobelBins) {
+  const ridgeBands = groupBins(ridgeBins).length;
+  const sobelEdgeGroups = groupBins(sobelBins).length;
+  return Math.max(ridgeBands, Math.floor((sobelEdgeGroups + 1) / 2));
 }
 
 function spectralFluxStability(history, start, end) {
@@ -515,12 +629,10 @@ function speechPatternComponents(frame, history) {
     return emptyPatternComponents();
   }
 
-  const speechStart = 4;
-  const speechEnd = 72;
   const bandSum = (start, end) =>
     values.slice(start, end).reduce((sum, value) => sum + value, 0);
-  const speechBandRatio = bandSum(speechStart, speechEnd) / total;
-  const highBandRatio = bandSum(speechEnd, values.length) / total;
+  const speechBandRatio = bandSum(speechBand.start, speechBand.end) / total;
+  const highBandRatio = bandSum(speechBand.end, values.length) / total;
   const centroid =
     values.reduce((sum, value, index) => sum + value * index, 0) /
     (total * (values.length - 1));
@@ -532,36 +644,68 @@ function speechPatternComponents(frame, history) {
     centroid >= 0.12 && centroid <= 0.78
       ? 1
       : clamp01(1 - Math.min(Math.abs(centroid - 0.45), 0.45) / 0.45);
-  const sustainedEdges = sustainedEdgeStructure(history, speechStart, speechEnd);
+  const sustainedEdges = sustainedEdgeStructure(
+    history,
+    speechBand.start,
+    speechBand.end
+  );
+  const sustainedSobel = sustainedSobelStructure(
+    history,
+    speechBand.start,
+    speechBand.end
+  );
   const sustainedRidges = sustainedRidgeStructure(
     history,
-    speechStart,
-    speechEnd
+    speechBand.start,
+    speechBand.end
   );
   const harmonicScore = Math.max(
     harmonicSpacingScore(sustainedEdges.bins),
-    harmonicSpacingScore(sustainedRidges.bins)
+    harmonicSpacingScore(sustainedRidges.bins),
+    harmonicSpacingScore(sustainedSobel.bins)
   );
-  const edgeContinuity = edgeContinuityScore(history, speechStart, speechEnd);
-  const fluxStability = spectralFluxStability(history, speechStart, speechEnd);
-  const broadbandGate = broadbandRejection(values, speechStart, speechEnd);
+  const edgeContinuity = edgeContinuityScore(
+    history,
+    speechBand.start,
+    speechBand.end
+  );
+  const fluxStability = spectralFluxStability(
+    history,
+    speechBand.start,
+    speechBand.end
+  );
+  const broadbandGate = broadbandRejection(
+    values,
+    speechBand.start,
+    speechBand.end
+  );
+  const horizontalBands = countHorizontalBands(
+    sustainedRidges.bins,
+    sustainedSobel.bins
+  );
+  const horizontalBandScore = clamp01(
+    (horizontalBands - vadGate.minHorizontalBands + 1) / 3
+  );
 
   const structureScore =
-    Math.max(sustainedEdges.score, sustainedRidges.score) * 0.45 +
+    Math.max(sustainedEdges.score, sustainedRidges.score, sustainedSobel.score) *
+      0.35 +
     harmonicScore * 0.2 +
-    edgeContinuity * 0.15 +
-    fluxStability * 0.1 +
+    horizontalBandScore * 0.2 +
+    edgeContinuity * 0.1 +
+    fluxStability * 0.05 +
     bandScore * 0.05 +
     centroidScore * 0.05;
 
   return {
     pattern: structureScore * broadbandGate.score,
-    edges: sustainedEdges.score,
+    edges: Math.max(sustainedEdges.score, sustainedSobel.score),
     ridges: sustainedRidges.score,
     harmonic: harmonicScore,
     continuity: edgeContinuity,
     flux: fluxStability,
-    bands: bandScore,
+    bands: horizontalBands,
+    bandBalance: bandScore,
     centroid: centroidScore,
     noise: broadbandGate.score,
     activeRatio: broadbandGate.ratio,
@@ -574,7 +718,7 @@ function startUi() {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  addFrame = (frame, vad) => {
+  addFrame = (frame, vad, edgeOverlay) => {
     if (!frame || frame.length === 0) {
       return;
     }
@@ -607,9 +751,23 @@ function startUi() {
           vad ? "plasma" : "cividis",
           false
         );
-        arr[i * 4 + 0] = r;
-        arr[i * 4 + 1] = g;
-        arr[i * 4 + 2] = b;
+        const edge = edgeOverlay?.[nMels - 1 - i];
+        const overlayAlpha = edge
+          ? clamp01((edge.magnitude - sobelOverlayThreshold) / 0.22)
+          : 0;
+        const overlayColor =
+          edge && edge.horizontal >= edge.temporal * 0.7
+            ? [0, 241, 255]
+            : [255, 190, 64];
+        arr[i * 4 + 0] = Math.round(
+          r * (1 - overlayAlpha) + overlayColor[0] * overlayAlpha
+        );
+        arr[i * 4 + 1] = Math.round(
+          g * (1 - overlayAlpha) + overlayColor[1] * overlayAlpha
+        );
+        arr[i * 4 + 2] = Math.round(
+          b * (1 - overlayAlpha) + overlayColor[2] * overlayAlpha
+        );
         arr[i * 4 + 3] = 255;
       }
 
@@ -664,9 +822,14 @@ function startUi() {
     }
 
     const components = speechPatternComponents(frame, patternHistory);
+    frame.sobelEdges = sobelEdgeColumn(
+      patternHistory,
+      speechBand.start,
+      speechBand.end
+    );
     updateComponentScores(components);
     const rawVad =
-      frame.vad &&
+      components.bands >= vadGate.minHorizontalBands &&
       (vadGate.minPatternScore === 0 ||
         components.pattern >= vadGate.minPatternScore);
 
@@ -793,7 +956,7 @@ function startUi() {
       frame.vad = filterVad(frame);
       framesSeen += 1;
       setStatus(frameCount, String(framesSeen));
-      addFrame(frame.luma, frame.vad);
+      addFrame(frame.luma, frame.vad, frame.sobelEdges);
       accumulateFrame(frame);
     }
   }, 10);
@@ -805,7 +968,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-7"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-9"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
