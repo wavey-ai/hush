@@ -55,6 +55,12 @@
       line-height: 1.5;
     }
 
+    .stt-note {
+      margin-top: 6px;
+      color: #8a2c3b;
+      font-weight: 650;
+    }
+
     .controls {
       display: flex;
       align-items: center;
@@ -131,12 +137,28 @@
     }
 
     .component-grid .status-item {
-      min-height: 54px;
+      min-height: 74px;
       padding: 8px 10px;
     }
 
     .component-grid .value {
       font-size: 16px;
+    }
+
+    .sticky-value {
+      display: block;
+      min-height: 16px;
+      margin-top: 4px;
+      color: #e12247;
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.15;
+      visibility: hidden;
+    }
+
+    .sticky-value.active {
+      visibility: visible;
     }
 
     canvas {
@@ -203,7 +225,8 @@
     <header>
       <div>
         <h1>Hush <span aria-hidden="true">🤫</span></h1>
-      <p>Live local mic mel spectrograms and VAD in the browser.</p>
+        <p>Live local mic mel spectrograms and VAD in the browser.</p>
+        <p class="stt-note" id="sttNote">STT from captured mel images is offline.</p>
       </div>
       <p id="isolationStatus">Checking browser isolation...</p>
     </header>
@@ -279,6 +302,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260515-9"></script>
+  <script src="./app.js?v=20260515-11"></script>
 </body>
 </html>
