@@ -32,18 +32,17 @@ async function initWasmInWorker() {
 
 function handleMessage(opts) {
   if (opts.melBufOpts) {
-    mod = SpeechToMel.new(
-      opts.fftSize,
-      opts.hopSize,
-      opts.samplingRate,
-      opts.nMels
-    );
+    mod = createSpeechToMel(opts);
     melBuf = ringbuffer(
       opts.melSab,
       opts.melBufOpts.size,
       opts.melBufOpts.max,
       Uint8ClampedArray,
     );
+  }
+
+  if (opts.configureVad) {
+    mod = createSpeechToMel(opts);
   }
 
   if (opts.pcmBufOpts) {
@@ -75,6 +74,29 @@ function handleMessage(opts) {
       }
     }
   }
+}
+
+function createSpeechToMel(opts) {
+  const settings = opts.vadSettings || {};
+  if (typeof SpeechToMel.newWithVadSettings === "function") {
+    return SpeechToMel.newWithVadSettings(
+      opts.fftSize,
+      opts.hopSize,
+      opts.samplingRate,
+      opts.nMels,
+      settings.minEnergy ?? 1.0,
+      settings.minY ?? 3,
+      settings.minX ?? 3,
+      settings.minMel ?? 0
+    );
+  }
+
+  return SpeechToMel.new(
+    opts.fftSize,
+    opts.hopSize,
+    opts.samplingRate,
+    opts.nMels
+  );
 }
 
 initWasmInWorker().catch((error) => {

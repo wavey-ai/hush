@@ -11,6 +11,8 @@ const vadStatus = document.getElementById("vadStatus");
 const frameCount = document.getElementById("frameCount");
 const segmentCount = document.getElementById("segmentCount");
 const isolationStatus = document.getElementById("isolationStatus");
+const presetStatus = document.getElementById("presetStatus");
+const presetButtons = Array.from(document.querySelectorAll("[data-vad-preset]"));
 
 const fftSize = 1024;
 const hopSize = 160;
@@ -20,6 +22,51 @@ const nMels = 80;
 const melBufOpts = { size: nMels + 8, max: 64 };
 const micBufOpts = { size: 128, max: 64 };
 const fileBufOpts = { size: hopSize, max: 200_000 };
+
+const vadPresets = {
+  sensitive: {
+    label: "Sensitive",
+    wasm: { minEnergy: 0.96, minY: 8, minX: 5, minMel: 4 },
+    gate: {
+      onFrames: 4,
+      offFrames: 6,
+      minPatternScore: 0,
+      minSpeechFrames: 10,
+      minSpeechRatio: 0.05,
+      minSegmentFrames: 80,
+      maxPreSpeechFrames: 40,
+      trailingSilenceFrames: 6,
+    },
+  },
+  balanced: {
+    label: "Balanced",
+    wasm: { minEnergy: 0.98, minY: 11, minX: 5, minMel: 2 },
+    gate: {
+      onFrames: 8,
+      offFrames: 10,
+      minPatternScore: 0.45,
+      minSpeechFrames: 28,
+      minSpeechRatio: 0.15,
+      minSegmentFrames: 100,
+      maxPreSpeechFrames: 45,
+      trailingSilenceFrames: 10,
+    },
+  },
+  safer: {
+    label: "Safer",
+    wasm: { minEnergy: 1.0, minY: 14, minX: 8, minMel: 4 },
+    gate: {
+      onFrames: 12,
+      offFrames: 12,
+      minPatternScore: 0.6,
+      minSpeechFrames: 35,
+      minSpeechRatio: 0.22,
+      minSegmentFrames: 140,
+      maxPreSpeechFrames: 35,
+      trailingSilenceFrames: 12,
+    },
+  },
+};
 
 let melSab;
 let melBuf;
@@ -32,6 +79,8 @@ let audioStream;
 let audioNode;
 let framesSeen = 0;
 let segmentsSeen = 0;
+let activeVadPreset = "safer";
+let resetSegmentation = () => {};
 
 const apiUrl =
   document.body.dataset.api ||
@@ -41,6 +90,55 @@ const apiUrl =
 function setStatus(element, value) {
   if (element) {
     element.textContent = value;
+  }
+}
+
+function vadPreset() {
+  return vadPresets[activeVadPreset] || vadPresets.safer;
+}
+
+function updatePresetUi() {
+  const preset = vadPreset();
+  setStatus(presetStatus, preset.label);
+
+  for (const button of presetButtons) {
+    button.setAttribute(
+      "aria-pressed",
+      button.dataset.vadPreset === activeVadPreset ? "true" : "false"
+    );
+  }
+}
+
+function configureWorkerVad() {
+  if (!pcmWorker) {
+    return;
+  }
+
+  pcmWorker.postMessage({
+    configureVad: true,
+    fftSize,
+    hopSize,
+    samplingRate,
+    nMels,
+    vadSettings: vadPreset().wasm,
+  });
+}
+
+function wireVadPresetControls() {
+  updatePresetUi();
+
+  for (const button of presetButtons) {
+    button.addEventListener("click", () => {
+      const key = button.dataset.vadPreset;
+      if (!vadPresets[key] || key === activeVadPreset) {
+        return;
+      }
+
+      activeVadPreset = key;
+      updatePresetUi();
+      resetSegmentation();
+      configureWorkerVad();
+    });
   }
 }
 
@@ -134,6 +232,7 @@ document.addEventListener("DOMContentLoaded", async function() {
   }
 
   sharedBuffers();
+  wireVadPresetControls();
   await startWorker();
   startUi();
   wireFileUpload();
@@ -224,7 +323,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260514-3"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260514-4"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -240,6 +339,7 @@ async function startWorker() {
     nMels,
     melSab,
     melBufOpts,
+    vadSettings: vadPreset().wasm,
   });
 
   setInterval(() => {
@@ -261,6 +361,112 @@ function interleave(columns) {
   }
 
   return interleavedArray;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function vectorSimilarity(a, b, start, end) {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = start; i < end; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+
+  return dot / Math.sqrt(normA * normB);
+}
+
+function lateralSpeechScore(history, start, end) {
+  if (history.length < 3) {
+    return 0;
+  }
+
+  let lateralBins = 0;
+  for (let bin = start; bin < end; bin++) {
+    let run = 0;
+    let maxRun = 0;
+
+    for (const frame of history) {
+      if (frame[bin] >= 0.42) {
+        run++;
+        maxRun = Math.max(maxRun, run);
+      } else {
+        run = 0;
+      }
+    }
+
+    if (maxRun >= 3) {
+      lateralBins++;
+    }
+  }
+
+  return clamp01((lateralBins - 4) / 16);
+}
+
+function continuityScore(history, start, end) {
+  const recent = history.slice(-7);
+  if (recent.length < 3) {
+    return 0;
+  }
+
+  let total = 0;
+  let count = 0;
+  for (let i = 1; i < recent.length; i++) {
+    total += vectorSimilarity(recent[i - 1], recent[i], start, end);
+    count++;
+  }
+
+  return clamp01(total / count);
+}
+
+function speechPatternScore(frame, history) {
+  const values = Array.from(frame.raw, (value) => value / 255);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) {
+    return 0;
+  }
+
+  const speechStart = 6;
+  const speechEnd = 58;
+  const bandSum = (start, end) =>
+    values.slice(start, end).reduce((sum, value) => sum + value, 0);
+  const speechBandRatio = bandSum(speechStart, speechEnd) / total;
+  const highBandRatio = bandSum(speechEnd, values.length) / total;
+  const activeBins = values.filter((value) => value >= 0.45).length;
+  const centroid =
+    values.reduce((sum, value, index) => sum + value * index, 0) /
+    (total * (values.length - 1));
+
+  const bandScore =
+    clamp01((speechBandRatio - 0.38) / 0.24) *
+    clamp01((0.62 - highBandRatio) / 0.28);
+  const widthScore =
+    activeBins >= 5 && activeBins <= 54
+      ? 1
+      : clamp01(1 - Math.abs(activeBins - 30) / 30);
+  const centroidScore =
+    centroid >= 0.12 && centroid <= 0.78
+      ? 1
+      : clamp01(1 - Math.min(Math.abs(centroid - 0.45), 0.45) / 0.45);
+  const lateralScore = lateralSpeechScore(history, speechStart, speechEnd);
+  const shapeContinuity = continuityScore(history, speechStart, speechEnd);
+
+  return (
+    lateralScore * 0.45 +
+    shapeContinuity * 0.25 +
+    bandScore * 0.2 +
+    widthScore * 0.05 +
+    centroidScore * 0.05
+  );
 }
 
 function startUi() {
@@ -335,10 +541,56 @@ function startUi() {
   let frames = [];
   let speechFrames = 0;
   let silenceFrames = 0;
-  const minFrames = 150;
-  const trailingSilenceFrames = 8;
+  let rawSpeechRun = 0;
+  let rawSilenceRun = 0;
+  let gatedVad = false;
+  let patternHistory = [];
+
+  resetSegmentation = () => {
+    frames = [];
+    speechFrames = 0;
+    silenceFrames = 0;
+    rawSpeechRun = 0;
+    rawSilenceRun = 0;
+    gatedVad = false;
+    patternHistory = [];
+    setStatus(vadStatus, "quiet");
+  };
+
+  const filterVad = (frame) => {
+    const gate = vadPreset().gate;
+    patternHistory.push(Array.from(frame.raw, (value) => value / 255));
+    if (patternHistory.length > 16) {
+      patternHistory.shift();
+    }
+
+    const patternScore = speechPatternScore(frame, patternHistory);
+    const rawVad =
+      frame.vad &&
+      (gate.minPatternScore === 0 || patternScore >= gate.minPatternScore);
+
+    if (rawVad) {
+      rawSpeechRun++;
+      rawSilenceRun = 0;
+    } else {
+      rawSilenceRun++;
+      rawSpeechRun = 0;
+    }
+
+    if (!gatedVad && rawSpeechRun >= gate.onFrames) {
+      gatedVad = true;
+    }
+
+    if (gatedVad && rawSilenceRun >= gate.offFrames) {
+      gatedVad = false;
+    }
+
+    return gatedVad;
+  };
 
   const accumulateFrame = (frame) => {
+    const gate = vadPreset().gate;
+
     frames.push(frame);
     if (frame.vad) {
       speechFrames++;
@@ -349,24 +601,28 @@ function startUi() {
       setStatus(vadStatus, "quiet");
     }
 
-    if (speechFrames === 0 && frames.length > minFrames) {
-      frames = [];
+    if (speechFrames === 0 && frames.length > gate.maxPreSpeechFrames) {
+      frames.splice(0, frames.length - gate.maxPreSpeechFrames);
       silenceFrames = 0;
       return;
     }
 
     if (
       speechFrames > 0 &&
-      silenceFrames >= trailingSilenceFrames &&
-      frames.length >= minFrames
+      silenceFrames >= gate.trailingSilenceFrames &&
+      frames.length >= gate.minSegmentFrames
     ) {
-      const dequant = frames.map((a) => a.toF32());
-      const normalized = normMel(interleave(dequant));
-      const tga = createTGAImage(normalized, nMels);
-      newSegment(interleave(frames.map((a) => a.luma)), tga);
-      frames = [];
-      speechFrames = 0;
-      silenceFrames = 0;
+      const speechRatio = speechFrames / frames.length;
+      if (
+        speechFrames >= gate.minSpeechFrames &&
+        speechRatio >= gate.minSpeechRatio
+      ) {
+        const dequant = frames.map((a) => a.toF32());
+        const normalized = normMel(interleave(dequant));
+        const tga = createTGAImage(normalized, nMels);
+        newSegment(interleave(frames.map((a) => a.luma)), tga);
+      }
+      resetSegmentation();
     }
   };
 
@@ -435,6 +691,7 @@ function startUi() {
       }
 
       const frame = melFrame(mel);
+      frame.vad = filterVad(frame);
       framesSeen += 1;
       setStatus(frameCount, String(framesSeen));
       addFrame(frame.luma, frame.vad);
@@ -449,7 +706,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-3"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-4"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
@@ -487,17 +744,19 @@ function stopAudioProcessing() {
 
 function melFrame(mel) {
   const vad = !(mel && (mel[0] & 1) === 1);
-  const luma = mel.slice(0, 80);
+  const raw = mel.slice(0, 80);
+  const luma = raw.slice();
   luma.reverse();
 
   const minBytes = mel.slice(80, 84);
   const maxBytes = mel.slice(84, 88);
   const min = new DataView(new Uint8Array(minBytes).buffer).getFloat32(0, true);
   const max = new DataView(new Uint8Array(maxBytes).buffer).getFloat32(0, true);
-  const toF32 = () => dequantize(mel.slice(0, 80), { min, max });
+  const toF32 = () => dequantize(raw, { min, max });
 
   return {
     luma,
+    raw,
     range: { min, max },
     vad,
     toF32,
