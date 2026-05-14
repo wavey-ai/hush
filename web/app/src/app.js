@@ -39,10 +39,11 @@ const vadSettings = {
 };
 
 const vadGate = {
-  onFrames: 7,
+  onFrames: 2,
   offFrames: 12,
-  minPatternScore: 0.45,
-  minHorizontalBands: 3,
+  minPatternScore: 0.2,
+  minHorizontalBands: 2,
+  targetHorizontalBands: 3,
   minSpeechFrames: 35,
   minSpeechRatio: 0.22,
   minSegmentFrames: 140,
@@ -261,7 +262,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260514-9"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-1"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -414,7 +415,13 @@ function sustainedSobelStructure(history, start, end) {
 
   for (let i = from; i < history.length; i++) {
     columns.push(
-      sobelEdgesForTriplet(history[i - 2], history[i - 1], history[i], start, end)
+      sobelEdgesForTriplet(
+        history[i - 2],
+        history[i - 1],
+        history[i],
+        start,
+        end
+      )
     );
   }
 
@@ -430,7 +437,9 @@ function sustainedSobelStructure(history, start, end) {
     for (const column of columns) {
       const edge = column[bin];
       const isHorizontal =
-        edge && edge.horizontal >= 0.1 && edge.horizontal >= edge.temporal * 0.7;
+        edge &&
+        edge.horizontal >= 0.075 &&
+        edge.horizontal >= edge.temporal * 0.55;
 
       if (isHorizontal) {
         run++;
@@ -440,14 +449,14 @@ function sustainedSobelStructure(history, start, end) {
       }
     }
 
-    if (maxRun >= 4) {
+    if (maxRun >= 3) {
       sustainedBins.push(bin);
     }
   }
 
   return {
     bins: sustainedBins,
-    score: clamp01((sustainedBins.length - 2) / 10),
+    score: clamp01((sustainedBins.length - 2) / 8),
   };
 }
 
@@ -473,7 +482,7 @@ function sustainedEdgeStructure(history, start, end) {
       }
     }
 
-    if (maxRun >= 4) {
+    if (maxRun >= 3) {
       sustainedBins.push(start + bin + 2);
     }
   }
@@ -493,7 +502,7 @@ function localRidgeMap(values, start, end) {
     const right = Math.max(values[i + 1], values[i + 2]);
     const shoulder = Math.max(left, right);
     const prominence = value - shoulder;
-    ridges.push(value >= 0.28 && prominence >= 0.035 ? prominence : 0);
+    ridges.push(value >= 0.22 && prominence >= 0.025 ? prominence : 0);
   }
 
   return ridges;
@@ -519,7 +528,7 @@ function sustainedRidgeStructure(history, start, end) {
         ridgeMap[bin + 1] || 0
       );
 
-      if (strength >= 0.04) {
+      if (strength >= 0.03) {
         run++;
         maxRun = Math.max(maxRun, run);
       } else {
@@ -527,7 +536,7 @@ function sustainedRidgeStructure(history, start, end) {
       }
     }
 
-    if (maxRun >= 4) {
+    if (maxRun >= 3) {
       sustainedBins.push(start + bin + 2);
     }
   }
@@ -552,6 +561,38 @@ function groupBins(bins, maxGap = 2) {
   return groups;
 }
 
+function groupCenter(group) {
+  return group.reduce((sum, value) => sum + value, 0) / group.length;
+}
+
+function mergeCenters(centers, maxGap = 2.5) {
+  if (centers.length === 0) {
+    return [];
+  }
+
+  const sorted = centers.slice().sort((a, b) => a.center - b.center);
+  const groups = [];
+
+  for (const center of sorted) {
+    const group = groups[groups.length - 1];
+    if (group && center.center - group[group.length - 1].center <= maxGap) {
+      group.push(center);
+    } else {
+      groups.push([center]);
+    }
+  }
+
+  return groups.map((group) => {
+    const totalStrength = group.reduce((sum, item) => sum + item.strength, 0);
+    return {
+      center:
+        group.reduce((sum, item) => sum + item.center * item.strength, 0) /
+        (totalStrength || group.length),
+      strength: totalStrength / group.length,
+    };
+  });
+}
+
 function harmonicSpacingScore(bins) {
   if (bins.length < 3) {
     return 0;
@@ -561,10 +602,153 @@ function harmonicSpacingScore(bins) {
   return clamp01((groups.length - 2) / 6) * clamp01((12 - groups.length) / 8);
 }
 
-function countHorizontalBands(ridgeBins, sobelBins) {
-  const ridgeBands = groupBins(ridgeBins).length;
-  const sobelEdgeGroups = groupBins(sobelBins).length;
-  return Math.max(ridgeBands, Math.floor((sobelEdgeGroups + 1) / 2));
+function horizontalSobelCenters(column, start, end) {
+  const bins = [];
+  const strengths = new Map();
+
+  for (let bin = start + 1; bin < end - 1; bin++) {
+    const edge = column[bin];
+    const isHorizontal =
+      edge &&
+      edge.horizontal >= 0.06 &&
+      edge.horizontal >= edge.temporal * 0.45;
+
+    if (isHorizontal) {
+      bins.push(bin);
+      strengths.set(bin, edge.horizontal);
+    }
+  }
+
+  return groupBins(bins, 2).map((group) => ({
+    center: groupCenter(group),
+    strength:
+      group.reduce((sum, bin) => sum + (strengths.get(bin) || 0), 0) /
+      group.length,
+  }));
+}
+
+function countVisibleHorizontalBands(column, start, end) {
+  if (!column || column.length === 0) {
+    return 0;
+  }
+
+  return horizontalSobelCenters(column, start, end).length;
+}
+
+function ridgeCenters(values, start, end) {
+  const ridgeMap = localRidgeMap(values, start, end);
+  const bins = [];
+  const strengths = new Map();
+
+  for (let i = 0; i < ridgeMap.length; i++) {
+    if (ridgeMap[i] >= 0.018) {
+      const bin = start + i + 2;
+      bins.push(bin);
+      strengths.set(bin, ridgeMap[i]);
+    }
+  }
+
+  return groupBins(bins, 2).map((group) => ({
+    center: groupCenter(group),
+    strength:
+      group.reduce((sum, bin) => sum + (strengths.get(bin) || 0), 0) /
+      group.length,
+  }));
+}
+
+function countTrackedHorizontalBands(history, start, end) {
+  if (history.length < 4) {
+    return { count: 0, score: 0, bins: [] };
+  }
+
+  const columns = [];
+  const from = Math.max(2, history.length - 12);
+
+  for (let i = from; i < history.length; i++) {
+    const sobel = sobelEdgesForTriplet(
+      history[i - 2],
+      history[i - 1],
+      history[i],
+      start,
+      end
+    );
+    columns.push(
+      mergeCenters(
+        [
+          ...horizontalSobelCenters(sobel, start, end),
+          ...ridgeCenters(history[i - 1], start, end),
+        ],
+        2.5
+      )
+    );
+  }
+
+  const tracks = [];
+  const maxDrift = 3.5;
+
+  for (const centers of columns) {
+    for (const track of tracks) {
+      track.matched = false;
+      track.gap += 1;
+    }
+
+    for (const center of centers.sort((a, b) => b.strength - a.strength)) {
+      let bestTrack = null;
+      let bestDistance = Infinity;
+
+      for (const track of tracks) {
+        const distance = Math.abs(track.center - center.center);
+        if (!track.matched && track.gap <= 2 && distance <= maxDrift) {
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestTrack = track;
+          }
+        }
+      }
+
+      if (bestTrack) {
+        bestTrack.center = bestTrack.center * 0.7 + center.center * 0.3;
+        bestTrack.hits += 1;
+        bestTrack.run += 1;
+        bestTrack.maxRun = Math.max(bestTrack.maxRun, bestTrack.run);
+        bestTrack.strength += center.strength;
+        bestTrack.gap = 0;
+        bestTrack.matched = true;
+      } else {
+        tracks.push({
+          center: center.center,
+          hits: 1,
+          run: 1,
+          maxRun: 1,
+          strength: center.strength,
+          gap: 0,
+          matched: true,
+        });
+      }
+    }
+
+    for (const track of tracks) {
+      if (!track.matched && track.gap > 1) {
+        track.run = 0;
+      }
+    }
+  }
+
+  const bins = mergeCenters(
+    tracks
+      .filter((track) => track.maxRun >= 3 && track.hits >= 3)
+      .map((track) => ({
+        center: track.center,
+        strength: track.strength / track.hits,
+      })),
+    3.5
+  ).map((track) => Math.round(track.center));
+
+  return {
+    count: bins.length,
+    score: clamp01((bins.length - 1) / 3),
+    bins,
+  };
 }
 
 function spectralFluxStability(history, start, end) {
@@ -659,10 +843,16 @@ function speechPatternComponents(frame, history) {
     speechBand.start,
     speechBand.end
   );
+  const trackedBands = countTrackedHorizontalBands(
+    history,
+    speechBand.start,
+    speechBand.end
+  );
   const harmonicScore = Math.max(
     harmonicSpacingScore(sustainedEdges.bins),
     harmonicSpacingScore(sustainedRidges.bins),
-    harmonicSpacingScore(sustainedSobel.bins)
+    harmonicSpacingScore(sustainedSobel.bins),
+    harmonicSpacingScore(trackedBands.bins)
   );
   const edgeContinuity = edgeContinuityScore(
     history,
@@ -679,17 +869,19 @@ function speechPatternComponents(frame, history) {
     speechBand.start,
     speechBand.end
   );
-  const horizontalBands = countHorizontalBands(
-    sustainedRidges.bins,
-    sustainedSobel.bins
-  );
+  const horizontalBands = trackedBands.count;
   const horizontalBandScore = clamp01(
-    (horizontalBands - vadGate.minHorizontalBands + 1) / 3
+    (horizontalBands - vadGate.minHorizontalBands + 1) /
+      (vadGate.targetHorizontalBands - vadGate.minHorizontalBands + 1)
   );
 
   const structureScore =
-    Math.max(sustainedEdges.score, sustainedRidges.score, sustainedSobel.score) *
-      0.35 +
+    Math.max(
+      sustainedEdges.score,
+      sustainedRidges.score,
+      sustainedSobel.score,
+      trackedBands.score
+    ) * 0.35 +
     harmonicScore * 0.2 +
     horizontalBandScore * 0.2 +
     edgeContinuity * 0.1 +
@@ -699,7 +891,11 @@ function speechPatternComponents(frame, history) {
 
   return {
     pattern: structureScore * broadbandGate.score,
-    edges: Math.max(sustainedEdges.score, sustainedSobel.score),
+    edges: Math.max(
+      sustainedEdges.score,
+      sustainedSobel.score,
+      trackedBands.score
+    ),
     ridges: sustainedRidges.score,
     harmonic: harmonicScore,
     continuity: edgeContinuity,
@@ -827,11 +1023,25 @@ function startUi() {
       speechBand.start,
       speechBand.end
     );
+    const visibleBands = countVisibleHorizontalBands(
+      frame.sobelEdges,
+      speechBand.start,
+      speechBand.end
+    );
+    components.bands = Math.max(components.bands, visibleBands);
+    components.edges = Math.max(components.edges, clamp01((visibleBands - 1) / 3));
     updateComponentScores(components);
+    const enoughSpeechBands =
+      components.bands >= vadGate.targetHorizontalBands ||
+      (components.bands >= vadGate.minHorizontalBands &&
+        components.edges >= 0.45 &&
+        components.continuity >= 0.35);
     const rawVad =
-      components.bands >= vadGate.minHorizontalBands &&
-      (vadGate.minPatternScore === 0 ||
-        components.pattern >= vadGate.minPatternScore);
+      visibleBands >= vadGate.targetHorizontalBands ||
+      (enoughSpeechBands &&
+        (vadGate.minPatternScore === 0 ||
+          components.pattern >= vadGate.minPatternScore ||
+          components.edges >= 0.25));
 
     if (rawVad) {
       rawSpeechRun++;
@@ -968,7 +1178,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-9"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-1"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
