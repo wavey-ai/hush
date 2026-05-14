@@ -63,8 +63,7 @@
       margin: 18px 0;
     }
 
-    button,
-    input::file-selector-button {
+    button {
       appearance: none;
       border: 1px solid #15171a;
       background: #15171a;
@@ -76,8 +75,7 @@
       cursor: pointer;
     }
 
-    button.secondary,
-    input::file-selector-button {
+    button.secondary {
       border-color: #c9ced6;
       background: #fff;
       color: #15171a;
@@ -86,12 +84,6 @@
     button:disabled {
       cursor: not-allowed;
       opacity: 0.5;
-    }
-
-    input[type="file"] {
-      max-width: 320px;
-      min-height: 36px;
-      color: #4c5562;
     }
 
     .panel {
@@ -211,16 +203,12 @@
     <header>
       <div>
         <h1>Hush <span aria-hidden="true">🤫</span></h1>
-        <p>Live local mel spectrograms and VAD in the browser. Audio stays on-device unless an API URL is configured.</p>
+      <p>Live local mic mel spectrograms and VAD in the browser.</p>
       </div>
       <p id="isolationStatus">Checking browser isolation...</p>
     </header>
 
     <section class="controls" aria-label="Audio controls">
-      <form id="uploadForm">
-        <input type="file" id="waveFileInput" accept=".wav,audio/wav,audio/x-wav">
-        <button type="submit" class="secondary">Play WAV</button>
-      </form>
       <button id="startButton" type="button">Start Mic</button>
       <button id="stopButton" type="button" class="secondary" disabled>Stop Mic</button>
     </section>
@@ -291,6 +279,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260515-8"></script>
+  <script src="./app.js?v=20260515-9"></script>
 </body>
 </html>

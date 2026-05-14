@@ -30,7 +30,6 @@ const nMels = 80;
 
 const melBufOpts = { size: nMels + 8, max: 64 };
 const micBufOpts = { size: 128, max: 64 };
-const fileBufOpts = { size: hopSize, max: 200_000 };
 
 const vadSettings = {
   minEnergy: 1.0,
@@ -67,8 +66,6 @@ const sobelOverlayThreshold = 0.12;
 let melSab;
 let melBuf;
 let micSab;
-let fileSab;
-let fileBuf;
 let pcmWorker;
 let audioContext;
 let audioStream;
@@ -118,13 +115,6 @@ function sharedBuffers() {
     Uint8ClampedArray
   );
   micSab = sharedbuffer(micBufOpts.size, micBufOpts.max, Float32Array);
-  fileSab = sharedbuffer(fileBufOpts.size, fileBufOpts.max, Float32Array);
-  fileBuf = ringbuffer(
-    fileSab,
-    fileBufOpts.size,
-    fileBufOpts.max,
-    Float32Array
-  );
 }
 
 const palettes = {
@@ -180,71 +170,8 @@ document.addEventListener("DOMContentLoaded", async function() {
   sharedBuffers();
   await startWorker();
   startUi();
-  wireFileUpload();
   wireMicControls();
 });
-
-function wireFileUpload() {
-  const form = document.getElementById("uploadForm");
-  const fileInput = document.getElementById("waveFileInput");
-
-  form.addEventListener("submit", async function(event) {
-    event.preventDefault();
-
-    const file = fileInput.files[0];
-    if (!file) {
-      alert("Please select a WAV file.");
-      return;
-    }
-
-    try {
-      setStatus(wasmStatus, "decoding file");
-      const samples = await decodeAudioFile(file);
-      pcmWorker.postMessage({ pcmSab: fileSab, pcmBufOpts: fileBufOpts });
-      pushSamples(fileBuf, samples, fileBufOpts.size);
-      setStatus(wasmStatus, "file queued");
-    } catch (error) {
-      setStatus(wasmStatus, `file error: ${error.message}`);
-    }
-  });
-}
-
-async function decodeAudioFile(file) {
-  const bytes = await file.arrayBuffer();
-  const context = new AudioContext({ sampleRate: samplingRate });
-  const audioBuffer = await context.decodeAudioData(bytes);
-  await context.close();
-  return resampleToMono16k(audioBuffer);
-}
-
-function resampleToMono16k(audioBuffer) {
-  const channel = audioBuffer.getChannelData(0);
-  if (audioBuffer.sampleRate === samplingRate) {
-    return channel;
-  }
-
-  const ratio = audioBuffer.sampleRate / samplingRate;
-  const outLength = Math.floor(channel.length / ratio);
-  const out = new Float32Array(outLength);
-
-  for (let i = 0; i < outLength; i++) {
-    const src = i * ratio;
-    const lo = Math.floor(src);
-    const hi = Math.min(channel.length - 1, lo + 1);
-    const frac = src - lo;
-    out[i] = channel[lo] * (1 - frac) + channel[hi] * frac;
-  }
-
-  return out;
-}
-
-function pushSamples(buffer, samples, frameSize) {
-  for (let offset = 0; offset < samples.length; offset += frameSize) {
-    const frame = new Float32Array(frameSize);
-    frame.set(samples.subarray(offset, offset + frameSize));
-    buffer.push(frame);
-  }
-}
 
 function wireMicControls() {
   startButton.addEventListener("click", async () => {
@@ -268,7 +195,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-8"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-9"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1303,7 +1230,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-8"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-9"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
