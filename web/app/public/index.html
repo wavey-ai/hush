@@ -1,87 +1,237 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="apple-touch-icon" sizes="180x180" href="/__rev__/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/__rev__/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/__rev__/favicon-16x16.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/__rev__/favicon-16x16.png">
-  <link rel="shortcut icon" type="image/jpg" href="/__rev__/favicon.ico" />
-  <link rel="manifest" href="/__rev__/site.webmanifest">
-  <title>hush</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+  <link rel="shortcut icon" href="./favicon.ico">
+  <link rel="manifest" href="./site.webmanifest">
+  <title>Hush</title>
   <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f6f7f8;
+      color: #15171a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-       font-family: sans-serif;
-        background-color: #f4f4f5;
-        margin: 20px;
-    }
-    p {
-      font-size: 10pt;
-    }
-    canvas {
-      margin: 20px 0;
-    }
-    ul#mels {
       margin: 0;
+      min-height: 100vh;
+      background: #f6f7f8;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 8px 0 0;
+      color: #5d6470;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    button,
+    input::file-selector-button {
+      appearance: none;
+      border: 1px solid #15171a;
+      background: #15171a;
+      color: #fff;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 6px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button.secondary,
+    input::file-selector-button {
+      border-color: #c9ced6;
+      background: #fff;
+      color: #15171a;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    input[type="file"] {
+      max-width: 320px;
+      min-height: 36px;
+      color: #4c5562;
+    }
+
+    .panel {
+      border: 1px solid #dce1e7;
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .status-item {
+      border: 1px solid #e2e6eb;
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 62px;
+    }
+
+    .label {
+      display: block;
+      color: #6b7380;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .value {
+      display: block;
+      margin-top: 6px;
+      font-variant-numeric: tabular-nums;
+      font-size: 18px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 140px;
+      border: 1px solid #dce1e7;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    #mels {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+      margin: 14px 0 0;
       padding: 0;
-      list-style-type: none;
-      height: 500px;
-      overflow-y: scroll;
+      list-style: none;
     }
+
     #mels li {
-      list-style-type: none;
-      float: left;
+      border: 1px solid #dce1e7;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
     }
+
+    #mels img {
+      display: block;
+      width: 100%;
+      height: 72px;
+      object-fit: cover;
+      image-rendering: pixelated;
+      background: #0b1020;
+    }
+
     #mels span {
       display: block;
-      height: 40px;
-      min-width: 50px;
-      background-color: #fff;
-      color: black;
-      padding: 5px;
-      font-size: 10pt;
-      margin-left: 1px;
-    }
-    #mels img {
-      transition: transform 0.3s;
-      height: 40px;
-      margin-left: 1px;
-    }
-    #mels img:hover {
-      transform: scale(4);
+      min-height: 42px;
+      padding: 8px 10px;
+      color: #303844;
+      font-size: 13px;
+      line-height: 1.35;
     }
 
+    @media (max-width: 760px) {
+      header {
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
   </style>
-
 </head>
+<body data-api="">
+  <main>
+    <header>
+      <div>
+        <h1>Hush</h1>
+        <p>Live local mel spectrograms and VAD in the browser. Audio stays on-device unless an API URL is configured.</p>
+      </div>
+      <p id="isolationStatus">Checking browser isolation...</p>
+    </header>
 
-<body>
-  <h3>
-    Mel Spectrogram with Voice Activity Detection
-  </h3>
-    <section>
-      <form style="display: inline;" id="uploadForm">
-      <input type="file" id="waveFileInput" accept=".wav" />
-      <button type="submit">Play File</button>
-    </form>
-    <button style="margin-left: 20px" id="startButton">Start Mic</button>
+    <section class="controls" aria-label="Audio controls">
+      <form id="uploadForm">
+        <input type="file" id="waveFileInput" accept=".wav,audio/wav,audio/x-wav">
+        <button type="submit" class="secondary">Play WAV</button>
+      </form>
+      <button id="startButton" type="button">Start Mic</button>
+      <button id="stopButton" type="button" class="secondary" disabled>Stop Mic</button>
     </section>
-    <p>demo limitations (wip): wav files must be 16 Khz; refresh page between adding files; requires Chrome (SIMD instructions).</p>
-    <canvas id="canvas" height="120" width="1000"
-                style="background-color:#f4f4f5;">
-    </canvas>
-  <ul id="mels">
-  </ul>
 
-  <script src='/__rev__/ringbuffer.js'></script>
-  <script src="/__rev__/js-colormaps.js"></script>
-  <script src='/__rev__/mel_spec_pipeline.js'></script>
-  <script src='/__rev__/mel_spec_audio.js'></script>
-  <script src="/__rev__/app.js"></script>
+    <section class="status-grid" aria-label="Status">
+      <div class="status-item">
+        <span class="label">WASM</span>
+        <span class="value" id="wasmStatus">loading</span>
+      </div>
+      <div class="status-item">
+        <span class="label">VAD</span>
+        <span class="value" id="vadStatus">idle</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Frames</span>
+        <span class="value" id="frameCount">0</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Segments</span>
+        <span class="value" id="segmentCount">0</span>
+      </div>
+    </section>
 
+    <section class="panel">
+      <canvas id="canvas" height="140" width="1100"></canvas>
+      <ul id="mels"></ul>
+    </section>
+  </main>
+
+  <script src="./dist/mel_spec.js"></script>
+  <script src="./ringbuffer.js"></script>
+  <script src="./app.js"></script>
 </body>
-
 </html>

@@ -1,110 +1,113 @@
-$${\huge \color{pink}🤫hush}$$
-### Silent Whisper inference for privacy and performance.
+# Hush
 
-Current speech-to-text wrappers tend to require audio input, even though all 
-models use mel spectrograms, not audio, internally.
+Browser-side mel spectrogram and voice activity detection for private ASR
+workflows.
 
-This has drawbacks, as audio needs to be sent from the user's device to the 
-server and if that is not possible the implementation is restricted to run 
-locally.
+Hush converts microphone or WAV input into quantized mel spectrogram segments in
+WASM. Audio stays in the browser; only compact TGA mel images need to be sent to
+an inference service when an API URL is configured.
 
-_**hush**_ uses quantized 8-bit grayscale images, not audio.
+## Current Demo
 
-As well as helping to prevent leakage of identifiable information, this approach
-simplifies voice activity detection, caching, storage / retrieval and bandwidth 
-considerations by removing audio signal processing and audio payloads from the 
-pipeline.
+The current app is designed to run from:
 
-For more background on how mel spectrograms are generated and used, see 
-[wavey-ai/mel-spec](https://github.com/wavey-ai/mel-spec.git) 
-
-To run inference, _**hush**_ uses a fork of the brilliant [whisper-burn](https://github.com/wavey-ai/whisper-burn.git) 
-that uses Rust's [burn-rs](https://github.com/burn-rs/burn) Deep Learning framework
-and [tch-rs](https://github.com/LaurentMazare/tch-rs) (Rust bindings for the C++ api of PyTorch). 
-The fork provides a mel API and exposes whisper-burn as a service, and configures a CUDA backend.
-
-#### demo
-
-Chrome is required as the demo currently uses SIMD instructions.
-
-[https://hush.wavey.ai](https://hush.wavey.ai)
-
-![demo](./doc/demo.png)
-
-The demo UI has the following components:
-
-* non-blocking WASM workers and Audio Worklets that convert audio (from file or 
-  microphone) into mel spectrograms on a stream with ultra-low latency
-* ultra-low latency voice activity detection that works by applying Sobel edge 
-  detection to spectrograms. This is used to determine were to segment streaming
-  audio for transcription (ideally always cutting between words, and not in the 
-  middle of a word.)
-* real-time visualisations on canvas
-* a client that sends audio segments as images to the AWS service running 
-  Whisper on GPU, receiving a text translation back
-
-Note that it is significantly faster with Dev Tools console closed.
-
-#### running
-
-The server will start accepting connections immediately and will load models in
-the background. To ensure quick cold starts the `tiny_en` model is always loaded
-and routed to first, with requests always being routed to the largest model 
-available. TODO: Make all this configurable, and allow model to be specified in
-the request.
-
-```
- INFO  hush > hush server listening on 0.0.0.0:1337
- INFO  hush > loading model "tiny_en"
- INFO  hush > loading model "medium_en"
- INFO  cached_path::cache > Cached version of https://huggingface.co/gpt2/resolve/main/tokenizer.json is up-to-date
- INFO  cached_path::cache > Cached version of https://huggingface.co/gpt2/resolve/main/tokenizer.json is up-to-date
- INFO  hush               > "tiny_en" loaded in 9 secs
- INFO  hush               > "medium_en" loaded in 109 secs
- ```
-
-Any GET request will return a simple status:
-
-```
-{"done":3,"models":1,"queue":0}
-
-done: number of completed requests
-queue: number of pending requests
-models:
-    0 = non loaded
-    1 = tiny_en loaded
-    2 = medium_en loaded
+```text
+https://wavey.ai/code/
 ```
 
-#### deployment
+It is a static Cloudflare Worker asset deployment mounted at `/code`. The Worker
+adds the COOP/COEP headers required for `SharedArrayBuffer`, which the WASM
+worker and AudioWorklet pipeline need.
 
-The included `ami.sh` creates an image with GPU support for running NVIDIA T4 
-Tensor Core instances. _A public ami will be provided soon._
+## What Runs In The Browser
 
-The cloudformation template creates an Auto Scaling Group that requests a 
-`g4dn.xlarge` spot instance and exposes the demo api on [https://hush.wavey.ai](https://hush.wavey.ai).
+- `mel-spec` WASM computes STFT, mel frames, quantization, and VAD.
+- The browser decodes WAV input into PCM frames before handing it to the WASM
+  mel pipeline.
+- Web Workers keep mel/WAV processing off the UI thread.
+- An AudioWorklet streams microphone samples into a shared ring buffer.
+- Captured speech segments are shown as spectrogram images and can optionally be
+  POSTed as TGA bytes to an ASR endpoint.
 
-The same template creates the demo UI, Github auth and a self-updating AWS 
-CodePipeline project that applies infrastructure changes via the template
-alongside any code changes in the repo.
+## Build
 
-The initial deployment should be done from local via the `make app` task, this
-will create the CodePipeline pipeline.
+From the repository root:
 
-Full instructions: TODO.
+```bash
+cd web/app
+npm install
+npm run build
+```
 
-#### TODO
+The build output is written to `web/app/dist/code`, mirroring the Cloudflare
+route path. The build uses a local sibling checkout when present:
 
-This is very much a POC and a WIP.
+- `../mel-spec`
 
-* ~fix wasm content type with a cloud function~
-* Traffic light status on UI for GPU spot instance: up/down/provisioning
-* ~Add real-time metrics to API~ and visibility in UI 
-* Support for Safari, non-SIMD version.
-* Support Web GPU (AWS G4ad instance w/AMD Radeon Pro V520 GPU)
-* Admin UI 
-* Add auth to EC2 service
-* WebRTC Data Channel API
-* ~Load medium_en model by default~
-* Allow any audio format to be uploaded, resampling as required
-* Clients for mobile
+If it is not available, the Makefile clones a shallow copy into `web/app/.deps`.
+
+## Local Run
+
+```bash
+cd web/app
+npm start
+```
+
+Open:
+
+```text
+http://127.0.0.1:8181/code/
+```
+
+The local server sends the same cross-origin isolation headers as the Cloudflare
+Worker.
+
+## Deploy
+
+The repo includes `wrangler.toml` for the `/code` route:
+
+```bash
+cd web/app
+CLOUDFLARE_EMAIL=jamie@wavey.ai \
+CLOUDFLARE_API_KEY="$(tr -d '\n\r' < ~/wavey.ai/.cloudflare-token)" \
+npm run deploy
+```
+
+Wrangler deploys `cloudflare/worker.js` plus static assets from
+`web/app/dist`. The route is configured as:
+
+```toml
+route = "wavey.ai/code*"
+```
+
+## Optional ASR API
+
+By default, the live page only captures local mel segments. To POST TGA segments
+to an API, either set `data-api` on the `<body>` tag or pass an `api` query
+parameter:
+
+```text
+https://wavey.ai/code/?api=https%3A%2F%2Fapi-hush.wavey.ai
+```
+
+The request body is the TGA byte buffer produced from the quantized mel segment.
+
+## Checks
+
+```bash
+cd web/app
+npm test
+npm run build
+```
+
+For an end-to-end browser check, run `npm start` and verify:
+
+- `crossOriginIsolated` is true.
+- `dist/mel_spec_bg.wasm` loads as `application/wasm`.
+- Starting the microphone changes VAD status and frame count.
+
+## Legacy
+
+The historical AWS, S3, CloudFront, Cognito, and GPU API files are still in this
+repository for reference. The active web demo path is the Cloudflare/WASM setup
+described above.

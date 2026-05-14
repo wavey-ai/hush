@@ -1,76 +1,151 @@
-const { startup: startup_mel } = wasm_bindgen_mel;
-const { startup: startup_wav } = wasm_bindgen_wav;
+const { startup } = wasm_bindgen;
+
+const scriptBase = new URL(".", document.currentScript.src);
+const assetUrl = (path) => new URL(path, scriptBase).href;
 
 const canvas = document.getElementById("canvas");
-const canvasCtx = canvas.getContext("2d");
+const startButton = document.getElementById("startButton");
+const stopButton = document.getElementById("stopButton");
+const wasmStatus = document.getElementById("wasmStatus");
+const vadStatus = document.getElementById("vadStatus");
+const frameCount = document.getElementById("frameCount");
+const segmentCount = document.getElementById("segmentCount");
+const isolationStatus = document.getElementById("isolationStatus");
 
-const canvasHeight = canvas.height;
 const fftSize = 1024;
 const hopSize = 160;
 const samplingRate = 16000;
 const nMels = 80;
 
-const melBufOpts = {
-  size: nMels + 8,
-  max: 64,
-};
+const melBufOpts = { size: nMels + 8, max: 64 };
+const micBufOpts = { size: 128, max: 64 };
+const fileBufOpts = { size: hopSize, max: 200_000 };
 
-const micBufOpts = {
-  size: 128,
-  max: 64,
-};
+let melSab;
+let melBuf;
+let micSab;
+let fileSab;
+let fileBuf;
+let pcmWorker;
+let audioContext;
+let audioStream;
+let audioNode;
+let framesSeen = 0;
+let segmentsSeen = 0;
 
-const wavBufOpts = {
-  size: 160,
-  max: 200_000,
-};
+const apiUrl =
+  document.body.dataset.api ||
+  new URLSearchParams(window.location.search).get("api") ||
+  "";
 
-const melSab = sharedbuffer(melBufOpts.size, melBufOpts.max, Uint8ClampedArray);
-const melBuf = ringbuffer(
-  melSab,
-  melBufOpts.size,
-  melBufOpts.max,
-  Uint8ClampedArray
-);
-const micSab = sharedbuffer(micBufOpts.size, micBufOpts.max, Float32Array);
-const wavSab = sharedbuffer(wavBufOpts.size, wavBufOpts.max, Float32Array);
-
-let wav_worker;
-let pcm_worker;
-
-
-function convertToFloat(grayscaleValue) {
-  return grayscaleValue / 255;
+function setStatus(element, value) {
+  if (element) {
+    element.textContent = value;
+  }
 }
 
+function assertIsolation() {
+  const ready =
+    window.crossOriginIsolated &&
+    typeof SharedArrayBuffer !== "undefined" &&
+    typeof AudioWorkletNode !== "undefined";
+
+  setStatus(
+    isolationStatus,
+    ready
+      ? "Browser isolation ready"
+      : "COOP/COEP isolation is required for SharedArrayBuffer"
+  );
+
+  if (!ready) {
+    startButton.disabled = true;
+    setStatus(wasmStatus, "blocked");
+  }
+
+  return ready;
+}
+
+function sharedBuffers() {
+  melSab = sharedbuffer(melBufOpts.size, melBufOpts.max, Uint8ClampedArray);
+  melBuf = ringbuffer(
+    melSab,
+    melBufOpts.size,
+    melBufOpts.max,
+    Uint8ClampedArray
+  );
+  micSab = sharedbuffer(micBufOpts.size, micBufOpts.max, Float32Array);
+  fileSab = sharedbuffer(fileBufOpts.size, fileBufOpts.max, Float32Array);
+  fileBuf = ringbuffer(
+    fileSab,
+    fileBufOpts.size,
+    fileBufOpts.max,
+    Float32Array
+  );
+}
+
+const palettes = {
+  cividis: [
+    [0.0, 0, 32, 76],
+    [0.35, 70, 92, 111],
+    [0.7, 160, 145, 96],
+    [1.0, 253, 231, 55],
+  ],
+  plasma: [
+    [0.0, 13, 8, 135],
+    [0.35, 156, 23, 158],
+    [0.7, 237, 121, 83],
+    [1.0, 240, 249, 33],
+  ],
+  winter: [
+    [0.0, 0, 0, 255],
+    [0.5, 0, 128, 191],
+    [1.0, 0, 255, 128],
+  ],
+};
+
 function colorizeGrayscaleValue(value, colormapName, reverse) {
-  const x = convertToFloat(value);
+  const x = Math.max(0, Math.min(1, value / 255));
+  const t = reverse ? 1 - x : x;
+  const stops = palettes[colormapName] || palettes.cividis;
 
-  const colorTuple = evaluate_cmap(x, colormapName, reverse);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (t >= a[0] && t <= b[0]) {
+      const span = b[0] - a[0] || 1;
+      const p = (t - a[0]) / span;
+      return [
+        Math.round(a[1] + (b[1] - a[1]) * p),
+        Math.round(a[2] + (b[2] - a[2]) * p),
+        Math.round(a[3] + (b[3] - a[3]) * p),
+      ];
+    }
+  }
 
-  return colorTuple;
+  const last = stops[stops.length - 1];
+  return [last[1], last[2], last[3]];
 }
 
 let addFrame;
 
 document.addEventListener("DOMContentLoaded", async function() {
+  if (!assertIsolation()) {
+    return;
+  }
+
+  sharedBuffers();
   await startWorker();
   startUi();
+  wireFileUpload();
+  wireMicControls();
+});
 
+function wireFileUpload() {
   const form = document.getElementById("uploadForm");
   const fileInput = document.getElementById("waveFileInput");
 
   form.addEventListener("submit", async function(event) {
     event.preventDefault();
-    wav_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
-    pcm_worker.postMessage({
-      fftSize,
-      hopSize,
-      samplingRate,
-      nMels,
-      melSab,
-      melBufOpts,
-    });
 
     const file = fileInput.files[0];
     if (!file) {
@@ -78,147 +153,92 @@ document.addEventListener("DOMContentLoaded", async function() {
       return;
     }
 
-    pcm_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
-    const CHUNK_SIZE = 1024 * 1024;
-    let offset = 0;
-
-    const reader = new FileReader();
-
-    reader.onload = function(event) {
-      const chunk = event.target.result;
-
-      if (chunk.byteLength > 0) {
-        wav_worker.postMessage({ buf: chunk });
-        offset += chunk.byteLength;
-        readNextChunk();
-      } else {
-        console.log("Finished reading file.");
-      }
-    };
-
-    reader.onerror = function() {
-      console.error("Error reading file.");
-    };
-
-    function readNextChunk() {
-      if (offset < file.size) {
-        const fileSlice = file.slice(offset, offset + CHUNK_SIZE);
-        reader.readAsArrayBuffer(fileSlice);
-      }
+    try {
+      setStatus(wasmStatus, "decoding file");
+      const samples = await decodeAudioFile(file);
+      pcmWorker.postMessage({ pcmSab: fileSab, pcmBufOpts: fileBufOpts });
+      pushSamples(fileBuf, samples, fileBufOpts.size);
+      setStatus(wasmStatus, "file queued");
+    } catch (error) {
+      setStatus(wasmStatus, `file error: ${error.message}`);
     }
+  });
+}
 
-    readNextChunk();
+async function decodeAudioFile(file) {
+  const bytes = await file.arrayBuffer();
+  const context = new AudioContext({ sampleRate });
+  const audioBuffer = await context.decodeAudioData(bytes);
+  await context.close();
+  return resampleToMono16k(audioBuffer);
+}
+
+function resampleToMono16k(audioBuffer) {
+  const channel = audioBuffer.getChannelData(0);
+  if (audioBuffer.sampleRate === samplingRate) {
+    return channel;
+  }
+
+  const ratio = audioBuffer.sampleRate / samplingRate;
+  const outLength = Math.floor(channel.length / ratio);
+  const out = new Float32Array(outLength);
+
+  for (let i = 0; i < outLength; i++) {
+    const src = i * ratio;
+    const lo = Math.floor(src);
+    const hi = Math.min(channel.length - 1, lo + 1);
+    const frac = src - lo;
+    out[i] = channel[lo] * (1 - frac) + channel[hi] * frac;
+  }
+
+  return out;
+}
+
+function pushSamples(buffer, samples, frameSize) {
+  for (let offset = 0; offset < samples.length; offset += frameSize) {
+    const frame = new Float32Array(frameSize);
+    frame.set(samples.subarray(offset, offset + frameSize));
+    buffer.push(frame);
+  }
+}
+
+function wireMicControls() {
+  startButton.addEventListener("click", async () => {
+    startButton.disabled = true;
+    try {
+      audioContext = new AudioContext({ sampleRate });
+      await startAudioProcessing(audioContext);
+      stopButton.disabled = false;
+    } catch (error) {
+      setStatus(wasmStatus, `mic error: ${error.message}`);
+      startButton.disabled = false;
+    }
   });
 
-  const canvas = document.getElementById("canvas"); // Replace 'canvas' with the ID of your canvas element
-  const ctx = canvas.getContext("2d");
-  const columnWidth = 1;
-  const canvasHeight = 130;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  addFrame = (frame, vad) => {
-    if (frame && frame.length > 0) {
-      const numColumns = Math.ceil(frame.length / nMels);
-
-      // Shift the pixels left by numColumns columns using global composite operation "copy"
-      ctx.globalCompositeOperation = "copy";
-      ctx.drawImage(
-        canvas,
-        numColumns * columnWidth,
-        0,
-        canvas.width - numColumns * columnWidth,
-        nMels + 16,
-        0,
-        0,
-        canvas.width - numColumns * columnWidth,
-        nMels + 16
-      );
-      ctx.globalCompositeOperation = "source-over";
-
-      for (let col = 0; col < numColumns; col++) {
-        const startIdx = col * nMels;
-        const endIdx = Math.min(startIdx + nMels, frame.length);
-        const columnData = frame.slice(startIdx, endIdx);
-
-        let arr = new Uint8ClampedArray(nMels * 4);
-        for (let i = 0; i < columnData.length; i++) {
-          let val = columnData[i]; // Use the correct index
-
-          let [r, g, b] = [];
-          if (vad) {
-            [r, g, b] = colorizeGrayscaleValue(val, "plasma", false);
-          } else {
-            [r, g, b] = colorizeGrayscaleValue(val, "cividis", false);
-          }
-
-          arr[i * 4 + 0] = r; // R value
-          arr[i * 4 + 1] = g; // G value
-          arr[i * 4 + 2] = b; // B value
-          arr[i * 4 + 3] = 255; // A value
-        }
-
-        for (let i = 0; i < 2 * (vad ? 6 : 4); i++) {
-          arr = new Uint8ClampedArray([...arr, 0, 0, 0, 0]);
-        }
-
-        const [pixelR, pixelG, pixelB] = vad ? [255, 0, 0] : [0, 0, 0];
-        let yOffset = vad ? 8 : 0; // Offset for vad true condition
-        for (let i = 0; i < 4; i++) {
-          arr[arr.length - 4 * (4 - i)] = pixelR; // R value
-          arr[arr.length - 4 * (4 - i) + 1] = pixelG; // G value
-          arr[arr.length - 4 * (4 - i) + 2] = pixelB; // B value
-          arr[arr.length - 4 * (4 - i) + 3] = 255; // A value
-        }
-
-        const imageData = new ImageData(arr, 1);
-        ctx.putImageData(imageData, canvas.width - numColumns + col, 0);
-      }
-      // Draw circle based on vad flag
-      const centerX = 990;
-      const centerY = 110;
-      const circleRadius = 10; // Adjust the radius as needed
-
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, circleRadius, 0, 2 * Math.PI);
-
-      if (vad) {
-        ctx.fillStyle = "red";
-      } else {
-        ctx.fillStyle = "black";
-      }
-
-      ctx.fill();
-      ctx.closePath();
-    }
-  };
-});
+  stopButton.addEventListener("click", async () => {
+    stopAudioProcessing();
+  });
+}
 
 async function startWorker() {
-  await wasm_bindgen_mel();
-  await wasm_bindgen_wav();
+  setStatus(wasmStatus, "loading");
+  await wasm_bindgen();
 
-  pcm_worker = startup_mel("/__rev__/worker.js");
-  wav_worker = startup_wav("/__rev__/wav_worker.js");
+  pcmWorker = startup(assetUrl("worker.js"));
+  pcmWorker.postMessage({
+    fftSize,
+    hopSize,
+    samplingRate,
+    nMels,
+    melSab,
+    melBufOpts,
+  });
 
-  setTimeout(() => {
-    wav_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
-    pcm_worker.postMessage({
-      fftSize,
-      hopSize,
-      samplingRate,
-      nMels,
-      melSab,
-      melBufOpts,
-    });
-  }, 2000);
+  setInterval(() => {
+    pcmWorker.postMessage({ pop: true });
+  }, 10);
 
-  const updateIntervalMs = 10;
-
-  const pop = () => {
-    pcm_worker.postMessage({ pop: true });
-  };
-  const popIntervalId = setInterval(pop, updateIntervalMs);
+  setStatus(wasmStatus, "ready");
 }
 
 function interleave(columns) {
@@ -235,35 +255,120 @@ function interleave(columns) {
   return interleavedArray;
 }
 
-let x = 0;
-
 function startUi() {
-  const updateIntervalMs = 10;
+  const ctx = canvas.getContext("2d");
+  const columnWidth = 1;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const melImages = [];
-  let frames = [];
-  let vads = 0;
-  let min_len = 150;
-  const accumulateFrame = (frame) => {
-    frames.push(frame);
-    if (!frame.vad) {
-      if (frames.length >= min_len) {
-        const dequant = frames.map((a) => a.toF32());
-        let f = normMel(interleave(dequant));
-        const tga = createTGAImage(f, nMels);
-        newSegment(interleave(frames.map((a) => a.luma)), tga);
-        frames = [];
-      }
+  addFrame = (frame, vad) => {
+    if (!frame || frame.length === 0) {
+      return;
     }
+
+    const numColumns = Math.ceil(frame.length / nMels);
+
+    ctx.globalCompositeOperation = "copy";
+    ctx.drawImage(
+      canvas,
+      numColumns * columnWidth,
+      0,
+      canvas.width - numColumns * columnWidth,
+      nMels + 18,
+      0,
+      0,
+      canvas.width - numColumns * columnWidth,
+      nMels + 18
+    );
+    ctx.globalCompositeOperation = "source-over";
+
+    for (let col = 0; col < numColumns; col++) {
+      const startIdx = col * nMels;
+      const endIdx = Math.min(startIdx + nMels, frame.length);
+      const columnData = frame.slice(startIdx, endIdx);
+      let arr = new Uint8ClampedArray(nMels * 4);
+
+      for (let i = 0; i < columnData.length; i++) {
+        const [r, g, b] = colorizeGrayscaleValue(
+          columnData[i],
+          vad ? "plasma" : "cividis",
+          false
+        );
+        arr[i * 4 + 0] = r;
+        arr[i * 4 + 1] = g;
+        arr[i * 4 + 2] = b;
+        arr[i * 4 + 3] = 255;
+      }
+
+      for (let i = 0; i < 2 * (vad ? 6 : 4); i++) {
+        arr = new Uint8ClampedArray([...arr, 0, 0, 0, 0]);
+      }
+
+      const [pixelR, pixelG, pixelB] = vad ? [225, 34, 71] : [30, 36, 44];
+      for (let i = 0; i < 4; i++) {
+        arr[arr.length - 4 * (4 - i)] = pixelR;
+        arr[arr.length - 4 * (4 - i) + 1] = pixelG;
+        arr[arr.length - 4 * (4 - i) + 2] = pixelB;
+        arr[arr.length - 4 * (4 - i) + 3] = 255;
+      }
+
+      const imageData = new ImageData(arr, 1);
+      ctx.putImageData(imageData, canvas.width - numColumns + col, 0);
+    }
+
+    ctx.beginPath();
+    ctx.arc(canvas.width - 18, 112, 10, 0, 2 * Math.PI);
+    ctx.fillStyle = vad ? "#e12247" : "#1e242c";
+    ctx.fill();
+    ctx.closePath();
   };
 
   const mels = document.getElementById("mels");
+  let frames = [];
+  let speechFrames = 0;
+  let silenceFrames = 0;
+  const minFrames = 150;
+  const trailingSilenceFrames = 8;
+
+  const accumulateFrame = (frame) => {
+    frames.push(frame);
+    if (frame.vad) {
+      speechFrames++;
+      silenceFrames = 0;
+      setStatus(vadStatus, "speech");
+    } else {
+      silenceFrames++;
+      setStatus(vadStatus, "quiet");
+    }
+
+    if (speechFrames === 0 && frames.length > minFrames) {
+      frames = [];
+      silenceFrames = 0;
+      return;
+    }
+
+    if (
+      speechFrames > 0 &&
+      silenceFrames >= trailingSilenceFrames &&
+      frames.length >= minFrames
+    ) {
+      const dequant = frames.map((a) => a.toF32());
+      const normalized = normMel(interleave(dequant));
+      const tga = createTGAImage(normalized, nMels);
+      newSegment(interleave(frames.map((a) => a.luma)), tga);
+      frames = [];
+      speechFrames = 0;
+      silenceFrames = 0;
+    }
+  };
 
   const newSegment = async (frames, tga) => {
-    const numColumns = frames.length / nMels;
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
+    segmentsSeen += 1;
+    setStatus(segmentCount, String(segmentsSeen));
 
+    const numColumns = frames.length / nMels;
+    const segmentCanvas = document.createElement("canvas");
+    const ctx = segmentCanvas.getContext("2d");
     const imageDataArr = new Uint8ClampedArray(nMels * 4 * numColumns);
 
     for (let col = 0; col < numColumns; col++) {
@@ -271,106 +376,105 @@ function startUi() {
         const dataIndex = row * numColumns + col;
         const val = frames[dataIndex];
         const [r, g, b] = colorizeGrayscaleValue(val, "winter", false);
-        imageDataArr[(row * numColumns + col) * 4 + 0] = r; // R value
-        imageDataArr[(row * numColumns + col) * 4 + 1] = g; // G value
-        imageDataArr[(row * numColumns + col) * 4 + 2] = b; // B value
-        imageDataArr[(row * numColumns + col) * 4 + 3] = 255; // A value
+        imageDataArr[(row * numColumns + col) * 4 + 0] = r;
+        imageDataArr[(row * numColumns + col) * 4 + 1] = g;
+        imageDataArr[(row * numColumns + col) * 4 + 2] = b;
+        imageDataArr[(row * numColumns + col) * 4 + 3] = 255;
       }
     }
 
-    const imageData = new ImageData(imageDataArr, numColumns, nMels);
-    canvas.width = numColumns;
-    canvas.height = nMels;
-    ctx.putImageData(imageData, 0, 0);
-
-    const imageURI = canvas.toDataURL();
+    segmentCanvas.width = numColumns;
+    segmentCanvas.height = nMels;
+    ctx.putImageData(new ImageData(imageDataArr, numColumns, nMels), 0, 0);
 
     const liElement = document.createElement("li");
-
     const imgElement = document.createElement("img");
-    imgElement.src = imageURI;
+    imgElement.src = segmentCanvas.toDataURL();
+    imgElement.alt = `Mel segment ${segmentsSeen}`;
 
     const spanElement = document.createElement("span");
-    spanElement.textContent = "Pending"; // Display "Pending" initially
+    spanElement.textContent = apiUrl
+      ? "Transcribing..."
+      : `${numColumns} frames captured locally`;
 
     liElement.appendChild(imgElement);
     liElement.appendChild(spanElement);
+    mels.prepend(liElement);
 
-    mels.appendChild(liElement);
+    if (!apiUrl) {
+      return;
+    }
 
-    let host = "https://api-hush.wavey.ai"
     try {
-      const response = await fetch(host, {
+      const response = await fetch(apiUrl, {
         method: "POST",
         body: tga.buffer,
       });
 
-      if (response.ok) {
-        const textResponse = await response.text();
-        spanElement.textContent = textResponse;
-      } else {
-        spanElement.textContent = "Error: Unable to fetch data.";
-      }
+      spanElement.textContent = response.ok
+        ? await response.text()
+        : `API error ${response.status}`;
     } catch (error) {
-      spanElement.textContent = "Error: " + error.message;
+      spanElement.textContent = `API error: ${error.message}`;
     }
   };
 
-  const updateUI = () => {
+  setInterval(() => {
     while (true) {
       const mel = melBuf.pop();
       if (!mel) {
         break;
       }
 
-      let frame = melFrame(mel);
-
+      const frame = melFrame(mel);
+      framesSeen += 1;
+      setStatus(frameCount, String(framesSeen));
       addFrame(frame.luma, frame.vad);
       accumulateFrame(frame);
     }
-  };
-
-  const updateIntervalId = setInterval(updateUI, updateIntervalMs);
+  }, 10);
 }
 
-async function startAudioProcessing(audioContext) {
-  audioStream = await navigator.mediaDevices.getUserMedia({
-    audio: true,
-  });
-  const sourceSamplingRate = audioContext.sampleRate;
-
-  const volume = audioContext.createGain();
-  const audioInput = audioContext.createMediaStreamSource(audioStream);
+async function startAudioProcessing(context) {
+  audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const volume = context.createGain();
+  const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  try {
-    await audioContext.audioWorklet.addModule("/__rev__/worklet.js");
-  } catch (error) {
-    console.error("Error loading audio worklet:", error);
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js"));
+
+  audioNode = new AudioWorkletNode(context, "AudioSender");
+  volume.connect(audioNode);
+  audioNode.connect(context.destination);
+
+  pcmWorker.postMessage({ pcmSab: micSab, pcmBufOpts: micBufOpts });
+  audioNode.port.postMessage({
+    pcmSab: micSab,
+    pcmBufOpts: micBufOpts,
+  });
+
+  setStatus(wasmStatus, "mic live");
+}
+
+function stopAudioProcessing() {
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => track.stop());
+    audioStream = null;
   }
 
-  const audioNode = new AudioWorkletNode(audioContext, "AudioSender");
-  volume.connect(audioNode);
-  audioNode.connect(audioContext.destination);
+  if (audioNode) {
+    audioNode.disconnect();
+    audioNode = null;
+  }
 
-  pcm_worker.postMessage({ pcmSab: micSab, pcmBufOpts: micBufOpts });
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
 
-  setTimeout(() => {
-    wav_worker.postMessage({ pcmSab: wavSab, pcmBufOpts: wavBufOpts });
-    pcm_worker.postMessage({
-      fftSize,
-      hopSize,
-      samplingRate,
-      nMels,
-      melSab,
-      melBufOpts,
-    });
-
-    audioNode.port.postMessage({
-      pcmSab: micSab,
-      pcmBufOpts: micBufOpts,
-    });
-  }, 2000);
+  stopButton.disabled = true;
+  startButton.disabled = false;
+  setStatus(wasmStatus, "ready");
 }
 
 function melFrame(mel) {
@@ -380,15 +484,8 @@ function melFrame(mel) {
 
   const minBytes = mel.slice(80, 84);
   const maxBytes = mel.slice(84, 88);
-
-  const minArrayBuffer = new Uint8Array(minBytes).buffer;
-  const maxArrayBuffer = new Uint8Array(maxBytes).buffer;
-
-  const minDataView = new DataView(minArrayBuffer);
-  const maxDataView = new DataView(maxArrayBuffer);
-
-  const min = minDataView.getFloat32(0, true);
-  const max = maxDataView.getFloat32(0, true);
+  const min = new DataView(new Uint8Array(minBytes).buffer).getFloat32(0, true);
+  const max = new DataView(new Uint8Array(maxBytes).buffer).getFloat32(0, true);
   const toF32 = () => dequantize(mel.slice(0, 80), { min, max });
 
   return {
@@ -398,89 +495,69 @@ function melFrame(mel) {
     toF32,
   };
 }
-startButton.addEventListener("click", () => {
-  const audioContext = new AudioContext({ sampleRate: 16_000 });
-  startAudioProcessing(audioContext);
-});
 
-function createTGAImage(frames, n_mels) {
+function createTGAImage(frames, nMels) {
   const { data, range } = quantize(frames);
-  let width = Math.floor(data.length / n_mels);
-  let height = n_mels;
+  const width = Math.floor(data.length / nMels);
+  const height = nMels;
 
-  // Combine the TGA header and image data
-  let tga_header = new Uint8Array(26); // Increased length to accommodate range data
-  tga_header[0] = 8; // ID len
-  tga_header[1] = 0; // color map type (unused)
-  tga_header[2] = 3; // Uncompressed, black and white images.
-  tga_header.set(new Uint8Array(5), 3); // color map spec (unused)
-  tga_header.set(new Uint8Array(4), 8); // X and Y Origin (unused)
-  tga_header.set(new Uint8Array(new Uint16Array([width]).buffer), 12); // Image Width (little-endian)
-  tga_header.set(new Uint8Array(new Uint16Array([height]).buffer), 14); // Image Height (little-endian)
-  tga_header[16] = 8; // Bits per Pixel (8 bits)
-  tga_header[17] = 0;
+  const tgaHeader = new Uint8Array(26);
+  tgaHeader[0] = 8;
+  tgaHeader[1] = 0;
+  tgaHeader[2] = 3;
+  tgaHeader.set(new Uint8Array(5), 3);
+  tgaHeader.set(new Uint8Array(4), 8);
+  tgaHeader.set(new Uint8Array(new Uint16Array([width]).buffer), 12);
+  tgaHeader.set(new Uint8Array(new Uint16Array([height]).buffer), 14);
+  tgaHeader[16] = 8;
+  tgaHeader[17] = 0;
 
-  // Store range data
-  const rangeBuffer = new ArrayBuffer(8); // 2 floats, each 4 bytes
+  const rangeBuffer = new ArrayBuffer(8);
   const rangeView = new DataView(rangeBuffer);
-  rangeView.setFloat32(0, range.min, true); // true indicates little-endian
+  rangeView.setFloat32(0, range.min, true);
   rangeView.setFloat32(4, range.max, true);
-  tga_header.set(new Uint8Array(rangeBuffer), 18);
+  tgaHeader.set(new Uint8Array(rangeBuffer), 18);
 
-  let tga_image = new Uint8Array(tga_header.length + data.length);
-  tga_image.set(tga_header);
-  tga_image.set(data, tga_header.length);
+  const tgaImage = new Uint8Array(tgaHeader.length + data.length);
+  tgaImage.set(tgaHeader);
+  tgaImage.set(data, tgaHeader.length);
 
-  return tga_image;
+  return tgaImage;
 }
 
 function quantize(frame) {
-  let result = new Uint8Array(frame.length);
-  let min = Math.min(...frame);
-  let max = Math.max(...frame);
-  let scale = 255.0 / (max - min);
+  const result = new Uint8Array(frame.length);
+  const min = Math.min(...frame);
+  const max = Math.max(...frame);
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max === min) {
+    return { data: result, range: { min: 0, max: 0 } };
+  }
+
+  const scale = 255.0 / (max - min);
   for (let i = 0; i < frame.length; i++) {
-    let scaled_value = Math.round((frame[i] - min) * scale);
-    result[i] = scaled_value;
+    result[i] = Math.round((frame[i] - min) * scale);
   }
 
   return { data: result, range: { min, max } };
 }
 
-// Dequantize Uint8Array data to original f32 values.
 function dequantize(data, range) {
-  let result = [];
+  if (range.max === range.min) {
+    return Array.from(data, () => range.min);
+  }
 
-  let scale = (range.max - range.min) / 255.0;
+  const result = [];
+  const scale = (range.max - range.min) / 255.0;
 
-  for (let value of data) {
-    let scaled_value = value * scale + range.min;
-    result.push(scaled_value);
+  for (const value of data) {
+    result.push(value * scale + range.min);
   }
 
   return result;
 }
 
-function downloadBytesAsFile(bytes, fileName) {
-  const blob = new Blob([bytes], { type: "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.textContent = "Download TGA Bytes";
-
-  document.body.appendChild(link);
-
-  link.click();
-
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
 function normMel(frame) {
   const mmax = frame.reduce((acc, x) => Math.max(acc, x), -Infinity);
-  const clamped = frame.map((x) => (Math.min(x, mmax) + 4.0) / 4.0);
-
-  return clamped;
+  return frame.map((x) => (Math.min(x, mmax) + 4.0) / 4.0);
 }

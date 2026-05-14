@@ -1,20 +1,27 @@
+SHELL := /bin/bash
 
-.PHONY: co
-co:
-	git clone https://github.com/wavey-ai/mel-spec.git
-	git clone https://github.com/timothygebhard/js-colormaps.git
+OUT_DIR := dist/code
+WASM_DIR := $(OUT_DIR)/dist
+DEPS_DIR := .deps
+MEL_SPEC_LOCAL := ../../../mel-spec
+MEL_SPEC_DIR ?= $(shell if [ -d "$(MEL_SPEC_LOCAL)" ]; then printf "$(MEL_SPEC_LOCAL)"; else printf "$(DEPS_DIR)/mel-spec"; fi)
+
+.PHONY: clean deps build
 
 clean:
-	rm -rf mel-spec
-	rm -rf js-colormaps
+	rm -rf dist
+	mkdir -p "$(WASM_DIR)"
 
-.PHONY: build
-build:
-	npm i && npm run build
-	cd ./mel-spec/mel_spec_pipeline && wasm-pack build --target no-modules --no-typescript --out-dir ../../dist --debug
-	cd ./mel-spec/mel_spec_audio && wasm-pack build --target no-modules --no-typescript --out-dir ../../dist --debug
-	sed -i.bak "s/wasm_bindgen/wasm_bindgen_wav/g" dist/mel_spec_audio.js
-	sed -i.bak "s/wasm_bindgen/wasm_bindgen_mel/g" dist/mel_spec_pipeline.js
-	cp src/*.js dist
-	cat src/ringbuffer.js src/worklet.js > dist/worklet.js
-	cp js-colormaps/js-colormaps.js dist
+deps:
+	@if [ ! -d "$(MEL_SPEC_DIR)" ]; then \
+		rm -rf "$(DEPS_DIR)/mel-spec"; \
+		mkdir -p "$(DEPS_DIR)"; \
+		git clone --depth 1 https://github.com/wavey-ai/mel-spec.git "$(DEPS_DIR)/mel-spec"; \
+	fi
+
+build: clean deps
+	cp public/* "$(OUT_DIR)/"
+	cp src/app.js src/ringbuffer.js src/worker.js "$(OUT_DIR)/"
+	cat src/ringbuffer.js src/worklet.js > "$(WASM_DIR)/worklet.js"
+	cd "$(MEL_SPEC_DIR)" && wasm-pack build --features=wasm --target no-modules --no-typescript --out-dir "$(abspath $(WASM_DIR))" --release
+	rm -f "$(WASM_DIR)"/*.bak "$(WASM_DIR)/.gitignore" "$(WASM_DIR)/LICENSE-MIT" "$(WASM_DIR)/README.md" "$(WASM_DIR)/package.json"

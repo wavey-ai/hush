@@ -1,4 +1,7 @@
 mel-spec/
+.deps/
+dist/
+node_modules/
 bundle/
 build/
 js-colormaps/

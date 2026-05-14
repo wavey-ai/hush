@@ -18,6 +18,14 @@ vpc:
 
 .PHONY: app
 app:
+	cd web/app && npm run build
+
+.PHONY: deploy
+deploy:
+	cd web/app && npm run deploy
+
+.PHONY: aws-app
+aws-app:
 	cd web/app && make build
 	./app.sh
 	aws s3 sync .artifacts/web/app s3://$(GATED_BUCKET)
