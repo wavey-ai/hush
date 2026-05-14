@@ -19,6 +19,7 @@ const componentScoreElements = {
   continuity: document.getElementById("continuityScore"),
   flux: document.getElementById("fluxScore"),
   bands: document.getElementById("bandScore"),
+  energy: document.getElementById("energyScore"),
   noise: document.getElementById("noiseScore"),
 };
 
@@ -42,6 +43,7 @@ const vadGate = {
   onFrames: 3,
   offFrames: 12,
   minPatternScore: 0.28,
+  minEnergyScore: 0.25,
   minHorizontalBands: 2,
   targetHorizontalBands: 3,
   minSpeechFrames: 35,
@@ -262,7 +264,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-2"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-3"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -317,6 +319,7 @@ function emptyPatternComponents() {
     bands: 0,
     centroid: 0,
     noise: 0,
+    energy: 0,
   };
 }
 
@@ -349,6 +352,18 @@ function vectorSimilarity(a, b) {
   }
 
   return dot / Math.sqrt(normA * normB);
+}
+
+function frameEnergyScore(frame) {
+  if (!frame?.range || !Number.isFinite(frame.range.max)) {
+    return 0;
+  }
+
+  return clamp01((frame.range.max + 4.5) / 2.0);
+}
+
+function hasAcousticEnergy(frame) {
+  return frameEnergyScore(frame) >= vadGate.minEnergyScore;
 }
 
 function frequencyEdges(values, start, end) {
@@ -803,10 +818,11 @@ function edgeContinuityScore(history, start, end) {
 }
 
 function speechPatternComponents(frame, history) {
+  const energy = frameEnergyScore(frame);
   const values = Array.from(frame.raw, (value) => value / 255);
   const total = values.reduce((sum, value) => sum + value, 0);
   if (total <= 0) {
-    return emptyPatternComponents();
+    return { ...emptyPatternComponents(), energy };
   }
 
   const bandSum = (start, end) =>
@@ -900,6 +916,7 @@ function speechPatternComponents(frame, history) {
     bandBalance: bandScore,
     centroid: centroidScore,
     noise: broadbandGate.score,
+    energy,
     activeRatio: broadbandGate.ratio,
   };
 }
@@ -1019,6 +1036,19 @@ function startUi() {
       speechBand.start,
       speechBand.end
     );
+    if (!hasAcousticEnergy(frame)) {
+      updateComponentScores({
+        ...emptyPatternComponents(),
+        energy: components.energy,
+      });
+      rawSilenceRun++;
+      rawSpeechRun = 0;
+      if (gatedVad && rawSilenceRun >= 2) {
+        gatedVad = false;
+      }
+      return false;
+    }
+
     updateComponentScores(components);
     const enoughSpeechBands =
       components.bands >= vadGate.targetHorizontalBands ||
@@ -1166,7 +1196,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-2"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-3"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);

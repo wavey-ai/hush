@@ -110,7 +110,7 @@
 
     .component-grid {
       display: grid;
-      grid-template-columns: repeat(8, minmax(0, 1fr));
+      grid-template-columns: repeat(9, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
@@ -274,6 +274,10 @@
         <span class="value" id="bandScore">0.00</span>
       </div>
       <div class="status-item">
+        <span class="label">Energy</span>
+        <span class="value" id="energyScore">0.00</span>
+      </div>
+      <div class="status-item">
         <span class="label">Noise reject</span>
         <span class="value" id="noiseScore">0.00</span>
       </div>
@@ -287,6 +291,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260515-2"></script>
+  <script src="./app.js?v=20260515-3"></script>
 </body>
 </html>
