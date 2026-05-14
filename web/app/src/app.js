@@ -28,7 +28,7 @@ const vadPresets = {
     label: "Sensitive",
     wasm: { minEnergy: 0.96, minY: 3, minX: 3, minMel: 0 },
     gate: {
-      onFrames: 4,
+      onFrames: 3,
       offFrames: 6,
       minPatternScore: 0,
       minSpeechFrames: 10,
@@ -42,9 +42,9 @@ const vadPresets = {
     label: "Balanced",
     wasm: { minEnergy: 0.98, minY: 5, minX: 5, minMel: 1 },
     gate: {
-      onFrames: 8,
+      onFrames: 5,
       offFrames: 10,
-      minPatternScore: 0.25,
+      minPatternScore: 0.32,
       minSpeechFrames: 28,
       minSpeechRatio: 0.15,
       minSegmentFrames: 100,
@@ -56,9 +56,9 @@ const vadPresets = {
     label: "Safer",
     wasm: { minEnergy: 1.0, minY: 6, minX: 6, minMel: 1 },
     gate: {
-      onFrames: 12,
+      onFrames: 7,
       offFrames: 12,
-      minPatternScore: 0.35,
+      minPatternScore: 0.45,
       minSpeechFrames: 35,
       minSpeechRatio: 0.22,
       minSegmentFrames: 140,
@@ -367,12 +367,12 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
 
-function vectorSimilarity(a, b, start, end) {
+function vectorSimilarity(a, b) {
   let dot = 0;
   let normA = 0;
   let normB = 0;
 
-  for (let i = start; i < end; i++) {
+  for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
@@ -385,18 +385,33 @@ function vectorSimilarity(a, b, start, end) {
   return dot / Math.sqrt(normA * normB);
 }
 
-function lateralSpeechScore(history, start, end) {
-  if (history.length < 3) {
-    return 0;
+function frequencyEdges(values, start, end) {
+  const edges = [];
+
+  for (let i = start + 2; i < end - 2; i++) {
+    const near = Math.abs(values[i + 1] - values[i - 1]);
+    const wide = Math.abs(values[i + 2] - values[i - 2]);
+    edges.push(near * 0.7 + wide * 0.3);
   }
 
-  let lateralBins = 0;
-  for (let bin = start; bin < end; bin++) {
+  return edges;
+}
+
+function sustainedEdgeStructure(history, start, end) {
+  const recent = history.slice(-10);
+  if (recent.length < 4) {
+    return { bins: [], score: 0 };
+  }
+
+  const edgeMaps = recent.map((frame) => frequencyEdges(frame, start, end));
+  const sustainedBins = [];
+
+  for (let bin = 0; bin < edgeMaps[0].length; bin++) {
     let run = 0;
     let maxRun = 0;
 
-    for (const frame of history) {
-      if (frame[bin] >= 0.42) {
+    for (const edgeMap of edgeMaps) {
+      if (edgeMap[bin] >= 0.14) {
         run++;
         maxRun = Math.max(maxRun, run);
       } else {
@@ -404,24 +419,47 @@ function lateralSpeechScore(history, start, end) {
       }
     }
 
-    if (maxRun >= 3) {
-      lateralBins++;
+    if (maxRun >= 4) {
+      sustainedBins.push(start + bin + 2);
     }
   }
 
-  return clamp01((lateralBins - 4) / 16);
+  return {
+    bins: sustainedBins,
+    score: clamp01((sustainedBins.length - 3) / 12),
+  };
 }
 
-function continuityScore(history, start, end) {
-  const recent = history.slice(-7);
-  if (recent.length < 3) {
+function harmonicSpacingScore(bins) {
+  if (bins.length < 3) {
     return 0;
   }
 
+  const groups = [];
+  for (const bin of bins) {
+    const group = groups[groups.length - 1];
+    if (group && bin - group[group.length - 1] <= 2) {
+      group.push(bin);
+    } else {
+      groups.push([bin]);
+    }
+  }
+
+  return clamp01((groups.length - 2) / 6) * clamp01((12 - groups.length) / 8);
+}
+
+function edgeContinuityScore(history, start, end) {
+  const recent = history.slice(-7);
+  if (recent.length < 4) {
+    return 0;
+  }
+
+  const edgeMaps = recent.map((frame) => frequencyEdges(frame, start, end));
   let total = 0;
   let count = 0;
-  for (let i = 1; i < recent.length; i++) {
-    total += vectorSimilarity(recent[i - 1], recent[i], start, end);
+
+  for (let i = 1; i < edgeMaps.length; i++) {
+    total += vectorSimilarity(edgeMaps[i - 1], edgeMaps[i]);
     count++;
   }
 
@@ -441,7 +479,6 @@ function speechPatternScore(frame, history) {
     values.slice(start, end).reduce((sum, value) => sum + value, 0);
   const speechBandRatio = bandSum(speechStart, speechEnd) / total;
   const highBandRatio = bandSum(speechEnd, values.length) / total;
-  const activeBins = values.filter((value) => value >= 0.45).length;
   const centroid =
     values.reduce((sum, value, index) => sum + value * index, 0) /
     (total * (values.length - 1));
@@ -449,22 +486,19 @@ function speechPatternScore(frame, history) {
   const bandScore =
     clamp01((speechBandRatio - 0.3) / 0.28) *
     clamp01((0.75 - highBandRatio) / 0.35);
-  const widthScore =
-    activeBins >= 5 && activeBins <= 54
-      ? 1
-      : clamp01(1 - Math.abs(activeBins - 30) / 30);
   const centroidScore =
     centroid >= 0.12 && centroid <= 0.78
       ? 1
       : clamp01(1 - Math.min(Math.abs(centroid - 0.45), 0.45) / 0.45);
-  const lateralScore = lateralSpeechScore(history, speechStart, speechEnd);
-  const shapeContinuity = continuityScore(history, speechStart, speechEnd);
+  const sustainedEdges = sustainedEdgeStructure(history, speechStart, speechEnd);
+  const harmonicScore = harmonicSpacingScore(sustainedEdges.bins);
+  const edgeContinuity = edgeContinuityScore(history, speechStart, speechEnd);
 
   return (
-    lateralScore * 0.45 +
-    shapeContinuity * 0.25 +
-    bandScore * 0.2 +
-    widthScore * 0.05 +
+    sustainedEdges.score * 0.45 +
+    harmonicScore * 0.2 +
+    edgeContinuity * 0.2 +
+    bandScore * 0.1 +
     centroidScore * 0.05
   );
 }
