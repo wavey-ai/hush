@@ -39,9 +39,9 @@ const vadSettings = {
 };
 
 const vadGate = {
-  onFrames: 2,
+  onFrames: 3,
   offFrames: 12,
-  minPatternScore: 0.2,
+  minPatternScore: 0.28,
   minHorizontalBands: 2,
   targetHorizontalBands: 3,
   minSpeechFrames: 35,
@@ -262,7 +262,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-1"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-2"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -610,8 +610,8 @@ function horizontalSobelCenters(column, start, end) {
     const edge = column[bin];
     const isHorizontal =
       edge &&
-      edge.horizontal >= 0.06 &&
-      edge.horizontal >= edge.temporal * 0.45;
+      edge.horizontal >= 0.08 &&
+      edge.horizontal >= edge.temporal * 0.75;
 
     if (isHorizontal) {
       bins.push(bin);
@@ -619,20 +619,14 @@ function horizontalSobelCenters(column, start, end) {
     }
   }
 
-  return groupBins(bins, 2).map((group) => ({
-    center: groupCenter(group),
-    strength:
-      group.reduce((sum, bin) => sum + (strengths.get(bin) || 0), 0) /
-      group.length,
-  }));
-}
-
-function countVisibleHorizontalBands(column, start, end) {
-  if (!column || column.length === 0) {
-    return 0;
-  }
-
-  return horizontalSobelCenters(column, start, end).length;
+  return groupBins(bins, 2)
+    .map((group) => ({
+      center: groupCenter(group),
+      strength:
+        group.reduce((sum, bin) => sum + (strengths.get(bin) || 0), 0) /
+        group.length,
+    }))
+    .filter((center) => center.strength >= 0.09);
 }
 
 function ridgeCenters(values, start, end) {
@@ -674,10 +668,7 @@ function countTrackedHorizontalBands(history, start, end) {
     );
     columns.push(
       mergeCenters(
-        [
-          ...horizontalSobelCenters(sobel, start, end),
-          ...ridgeCenters(history[i - 1], start, end),
-        ],
+        horizontalSobelCenters(sobel, start, end),
         2.5
       )
     );
@@ -736,7 +727,12 @@ function countTrackedHorizontalBands(history, start, end) {
 
   const bins = mergeCenters(
     tracks
-      .filter((track) => track.maxRun >= 3 && track.hits >= 3)
+      .filter(
+        (track) =>
+          track.maxRun >= 4 &&
+          track.hits >= 4 &&
+          track.strength / track.hits >= 0.09
+      )
       .map((track) => ({
         center: track.center,
         strength: track.strength / track.hits,
@@ -1023,25 +1019,17 @@ function startUi() {
       speechBand.start,
       speechBand.end
     );
-    const visibleBands = countVisibleHorizontalBands(
-      frame.sobelEdges,
-      speechBand.start,
-      speechBand.end
-    );
-    components.bands = Math.max(components.bands, visibleBands);
-    components.edges = Math.max(components.edges, clamp01((visibleBands - 1) / 3));
     updateComponentScores(components);
     const enoughSpeechBands =
       components.bands >= vadGate.targetHorizontalBands ||
       (components.bands >= vadGate.minHorizontalBands &&
-        components.edges >= 0.45 &&
-        components.continuity >= 0.35);
+        components.edges >= 0.3 &&
+        components.noise >= 0.4);
     const rawVad =
-      visibleBands >= vadGate.targetHorizontalBands ||
-      (enoughSpeechBands &&
-        (vadGate.minPatternScore === 0 ||
-          components.pattern >= vadGate.minPatternScore ||
-          components.edges >= 0.25));
+      enoughSpeechBands &&
+      (vadGate.minPatternScore === 0 ||
+        components.pattern >= vadGate.minPatternScore ||
+        components.edges >= 0.5);
 
     if (rawVad) {
       rawSpeechRun++;
@@ -1178,7 +1166,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-1"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-2"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
