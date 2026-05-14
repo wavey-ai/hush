@@ -41,9 +41,13 @@ const vadSettings = {
 
 const vadGate = {
   onFrames: 3,
+  fastOnsetFrames: 1,
   offFrames: 12,
   minPatternScore: 0.32,
   minEnergyScore: 0.32,
+  fastOnsetPatternScore: 0.62,
+  fastOnsetEnergyScore: 0.55,
+  fastOnsetBands: 5,
   minHorizontalBands: 2,
   targetHorizontalBands: 3,
   minSpeechFrames: 35,
@@ -264,7 +268,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-7"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-8"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1125,6 +1129,16 @@ function startUi() {
     }
 
     updateComponentScores(components);
+    const highConfidenceOnset =
+      components.bands >= vadGate.fastOnsetBands &&
+      components.pattern >= vadGate.fastOnsetPatternScore &&
+      components.energy >= vadGate.fastOnsetEnergyScore &&
+      components.edges >= 0.75 &&
+      components.ridges >= 0.65 &&
+      components.harmonic >= 0.2 &&
+      components.continuity >= 0.55 &&
+      components.noise >= 0.75 &&
+      components.bandBalance >= 0.25;
     const enoughSpeechBands =
       (components.bands >= vadGate.targetHorizontalBands &&
         components.noise >= 0.45 &&
@@ -1140,7 +1154,8 @@ function startUi() {
         components.edges >= 0.55 ||
         (components.ridgeTracks >= 0.67 &&
           components.harmonic >= 0.16 &&
-          components.continuity >= 0.25));
+          components.continuity >= 0.25) ||
+        highConfidenceOnset);
 
     if (rawVad) {
       rawSpeechRun++;
@@ -1150,7 +1165,10 @@ function startUi() {
       rawSpeechRun = 0;
     }
 
-    if (!gatedVad && rawSpeechRun >= vadGate.onFrames) {
+    const requiredOnFrames = highConfidenceOnset
+      ? vadGate.fastOnsetFrames
+      : vadGate.onFrames;
+    if (!gatedVad && rawSpeechRun >= requiredOnFrames) {
       gatedVad = true;
     }
 
@@ -1285,7 +1303,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-7"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-8"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
