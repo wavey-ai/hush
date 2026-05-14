@@ -20,7 +20,6 @@ const componentScoreElements = {
   flux: document.getElementById("fluxScore"),
   bands: document.getElementById("bandScore"),
   energy: document.getElementById("energyScore"),
-  transient: document.getElementById("transientScore"),
   noise: document.getElementById("noiseScore"),
 };
 
@@ -45,7 +44,6 @@ const vadGate = {
   offFrames: 12,
   minPatternScore: 0.28,
   minEnergyScore: 0.25,
-  maxTransientScore: 0.55,
   minHorizontalBands: 2,
   targetHorizontalBands: 3,
   minSpeechFrames: 35,
@@ -266,7 +264,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-4"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-5"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -322,7 +320,6 @@ function emptyPatternComponents() {
     centroid: 0,
     noise: 0,
     energy: 0,
-    transient: 0,
   };
 }
 
@@ -425,53 +422,6 @@ function sobelEdgeColumn(history, start, end) {
     start,
     end
   );
-}
-
-function edgeShape(column, start, end) {
-  if (!column || column.length === 0) {
-    return {
-      transient: 0,
-      horizontal: 0,
-      horizontalGroups: 0,
-      temporalGroups: 0,
-    };
-  }
-
-  const horizontalBins = [];
-  const temporalBins = [];
-  let horizontalEnergy = 0;
-  let temporalEnergy = 0;
-
-  for (let bin = start + 1; bin < end - 1; bin++) {
-    const edge = column[bin];
-    if (!edge) {
-      continue;
-    }
-
-    horizontalEnergy += edge.horizontal;
-    temporalEnergy += edge.temporal;
-
-    if (edge.horizontal >= 0.08 && edge.horizontal >= edge.temporal * 0.75) {
-      horizontalBins.push(bin);
-    }
-
-    if (edge.temporal >= 0.08 && edge.temporal >= edge.horizontal * 1.15) {
-      temporalBins.push(bin);
-    }
-  }
-
-  const horizontalGroups = groupBins(horizontalBins, 2).length;
-  const temporalGroups = groupBins(temporalBins, 2).length;
-  const totalEnergy = horizontalEnergy + temporalEnergy;
-  const temporalRatio = totalEnergy > 0 ? temporalEnergy / totalEnergy : 0;
-  const temporalExcess = clamp01((temporalGroups - horizontalGroups + 1) / 5);
-
-  return {
-    transient: clamp01(((temporalRatio - 0.45) / 0.35) * temporalExcess),
-    horizontal: totalEnergy > 0 ? horizontalEnergy / totalEnergy : 0,
-    horizontalGroups,
-    temporalGroups,
-  };
 }
 
 function sustainedSobelStructure(history, start, end) {
@@ -967,7 +917,6 @@ function speechPatternComponents(frame, history) {
     centroid: centroidScore,
     noise: broadbandGate.score,
     energy,
-    transient: 0,
     activeRatio: broadbandGate.ratio,
   };
 }
@@ -1003,7 +952,8 @@ function startUi() {
       const startIdx = col * nMels;
       const endIdx = Math.min(startIdx + nMels, frame.length);
       const columnData = frame.slice(startIdx, endIdx);
-      let arr = new Uint8ClampedArray(nMels * 4);
+      const meterRows = 2 * (vad ? 6 : 4);
+      const arr = new Uint8ClampedArray((nMels + meterRows) * 4);
 
       for (let i = 0; i < columnData.length; i++) {
         const [r, g, b] = colorizeGrayscaleValue(
@@ -1029,10 +979,6 @@ function startUi() {
           b * (1 - overlayAlpha) + overlayColor[2] * overlayAlpha
         );
         arr[i * 4 + 3] = 255;
-      }
-
-      for (let i = 0; i < 2 * (vad ? 6 : 4); i++) {
-        arr = new Uint8ClampedArray([...arr, 0, 0, 0, 0]);
       }
 
       const [pixelR, pixelG, pixelB] = vad ? [225, 34, 71] : [30, 36, 44];
@@ -1087,8 +1033,6 @@ function startUi() {
       speechBand.start,
       speechBand.end
     );
-    const shape = edgeShape(frame.sobelEdges, speechBand.start, speechBand.end);
-    components.transient = shape.transient;
     if (!hasAcousticEnergy(frame)) {
       updateComponentScores({
         ...emptyPatternComponents(),
@@ -1109,7 +1053,6 @@ function startUi() {
         components.edges >= 0.3 &&
         components.noise >= 0.4);
     const rawVad =
-      components.transient <= vadGate.maxTransientScore &&
       enoughSpeechBands &&
       (vadGate.minPatternScore === 0 ||
         components.pattern >= vadGate.minPatternScore ||
@@ -1258,7 +1201,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-4"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-5"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
@@ -1346,8 +1289,18 @@ function createTGAImage(frames, nMels) {
 
 function quantize(frame) {
   const result = new Uint8Array(frame.length);
-  const min = Math.min(...frame);
-  const max = Math.max(...frame);
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (let i = 0; i < frame.length; i++) {
+    const value = frame[i];
+    if (value < min) {
+      min = value;
+    }
+    if (value > max) {
+      max = value;
+    }
+  }
 
   if (!Number.isFinite(min) || !Number.isFinite(max) || max === min) {
     return { data: result, range: { min: 0, max: 0 } };
