@@ -26,7 +26,7 @@ const fileBufOpts = { size: hopSize, max: 200_000 };
 const vadPresets = {
   sensitive: {
     label: "Sensitive",
-    wasm: { minEnergy: 0.96, minY: 8, minX: 5, minMel: 4 },
+    wasm: { minEnergy: 0.96, minY: 3, minX: 3, minMel: 0 },
     gate: {
       onFrames: 4,
       offFrames: 6,
@@ -40,11 +40,11 @@ const vadPresets = {
   },
   balanced: {
     label: "Balanced",
-    wasm: { minEnergy: 0.98, minY: 11, minX: 5, minMel: 2 },
+    wasm: { minEnergy: 0.98, minY: 5, minX: 5, minMel: 1 },
     gate: {
       onFrames: 8,
       offFrames: 10,
-      minPatternScore: 0.45,
+      minPatternScore: 0.25,
       minSpeechFrames: 28,
       minSpeechRatio: 0.15,
       minSegmentFrames: 100,
@@ -54,11 +54,11 @@ const vadPresets = {
   },
   safer: {
     label: "Safer",
-    wasm: { minEnergy: 1.0, minY: 14, minX: 8, minMel: 4 },
+    wasm: { minEnergy: 1.0, minY: 6, minX: 6, minMel: 1 },
     gate: {
       onFrames: 12,
       offFrames: 12,
-      minPatternScore: 0.6,
+      minPatternScore: 0.35,
       minSpeechFrames: 35,
       minSpeechRatio: 0.22,
       minSegmentFrames: 140,
@@ -435,8 +435,8 @@ function speechPatternScore(frame, history) {
     return 0;
   }
 
-  const speechStart = 6;
-  const speechEnd = 58;
+  const speechStart = 4;
+  const speechEnd = 72;
   const bandSum = (start, end) =>
     values.slice(start, end).reduce((sum, value) => sum + value, 0);
   const speechBandRatio = bandSum(speechStart, speechEnd) / total;
@@ -447,8 +447,8 @@ function speechPatternScore(frame, history) {
     (total * (values.length - 1));
 
   const bandScore =
-    clamp01((speechBandRatio - 0.38) / 0.24) *
-    clamp01((0.62 - highBandRatio) / 0.28);
+    clamp01((speechBandRatio - 0.3) / 0.28) *
+    clamp01((0.75 - highBandRatio) / 0.35);
   const widthScore =
     activeBins >= 5 && activeBins <= 54
       ? 1
