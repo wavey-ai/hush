@@ -224,7 +224,15 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260514-3"));
+  pcmWorker.onmessage = (event) => {
+    if (event.data?.error) {
+      setStatus(wasmStatus, event.data.error);
+    }
+  };
+  pcmWorker.onerror = (event) => {
+    setStatus(wasmStatus, `worker error: ${event.message}`);
+  };
   pcmWorker.postMessage({
     fftSize,
     hopSize,
@@ -441,7 +449,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-3"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);

@@ -6,62 +6,77 @@ importScripts(assetUrl("ringbuffer.js"));
 const { SpeechToMel } = wasm_bindgen;
 
 const instance = wasm_bindgen(assetUrl("dist/mel_spec_bg.wasm"));
+const pendingMessages = [];
+let wasmReady = false;
+let melBuf;
+let pcmBuf;
+let mod;
 
-async function init_wasm_in_worker() {
-  // Load the wasm file by awaiting the Promise returned by `wasm_bindgen`.
+self.onmessage = (event) => {
+  if (!wasmReady) {
+    pendingMessages.push(event.data);
+    return;
+  }
 
+  handleMessage(event.data);
+};
+
+async function initWasmInWorker() {
   await instance;
-  let melBuf;
-  let pcmBuf;
-  let mod;
+  wasmReady = true;
 
-  self.onmessage = async (event) => {
-    const opts = event.data;
-    if (opts.melBufOpts) {
-      mod = SpeechToMel.new(
-        opts.fftSize,
-        opts.hopSize,
-        opts.samplingRate,
-        opts.nMels
-      );
-      melBuf = ringbuffer(
-        opts.melSab,
-        opts.melBufOpts.size,
-        opts.melBufOpts.max,
-        Uint8ClampedArray,
-      );
-    }
-
-    if (opts.pcmBufOpts) {
-      pcmBuf = ringbuffer(
-        opts.pcmSab,
-        opts.pcmBufOpts.size,
-        opts.pcmBufOpts.max,
-        Float32Array,
-      );
-    }
-
-    if (opts.pop && pcmBuf) {
-      while (true) {
-        let samples = pcmBuf.pop();
-        if (samples) {
-          const res = mod.add(samples, true);
-          if (res.ok) {
-            const data = new Uint8ClampedArray(res.frame.length + 8);
-            data.set(res.frame);
-            const float1Bytes = new Uint8Array(new Float32Array([res.min]).buffer);
-            const float2Bytes = new Uint8Array(new Float32Array([res.max]).buffer);
-            data.set(float1Bytes, 80);
-            data.set(float2Bytes, 84);
-            data[0] = res.va ? data[0] & ~1 : data[0] | 1;
-            melBuf.push(data);
-          }
-        } else {
-          break;
-        }
-      }
-    }
-  };
+  while (pendingMessages.length > 0) {
+    handleMessage(pendingMessages.shift());
+  }
 }
 
-init_wasm_in_worker();
+function handleMessage(opts) {
+  if (opts.melBufOpts) {
+    mod = SpeechToMel.new(
+      opts.fftSize,
+      opts.hopSize,
+      opts.samplingRate,
+      opts.nMels
+    );
+    melBuf = ringbuffer(
+      opts.melSab,
+      opts.melBufOpts.size,
+      opts.melBufOpts.max,
+      Uint8ClampedArray,
+    );
+  }
+
+  if (opts.pcmBufOpts) {
+    pcmBuf = ringbuffer(
+      opts.pcmSab,
+      opts.pcmBufOpts.size,
+      opts.pcmBufOpts.max,
+      Float32Array,
+    );
+  }
+
+  if (opts.pop && pcmBuf && melBuf && mod) {
+    while (true) {
+      const samples = pcmBuf.pop();
+      if (!samples) {
+        break;
+      }
+
+      const res = mod.add(samples, true);
+      if (res.ok) {
+        const data = new Uint8ClampedArray(res.frame.length + 8);
+        data.set(res.frame);
+        const float1Bytes = new Uint8Array(new Float32Array([res.min]).buffer);
+        const float2Bytes = new Uint8Array(new Float32Array([res.max]).buffer);
+        data.set(float1Bytes, 80);
+        data.set(float2Bytes, 84);
+        data[0] = res.va ? data[0] & ~1 : data[0] | 1;
+        melBuf.push(data);
+      }
+    }
+  }
+}
+
+initWasmInWorker().catch((error) => {
+  self.postMessage({ error: `worker wasm init failed: ${error.message}` });
+});
