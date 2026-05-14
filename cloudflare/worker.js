@@ -5,17 +5,18 @@ const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
 };
+const BASE_PATH = "/code/hush";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/code") {
-      url.pathname = "/code/";
+    if (url.pathname === BASE_PATH) {
+      url.pathname = `${BASE_PATH}/`;
       return Response.redirect(url.toString(), 308);
     }
 
-    if (!url.pathname.startsWith("/code/")) {
+    if (!url.pathname.startsWith(`${BASE_PATH}/`)) {
       return withHeaders(new Response("Not found", { status: 404 }), url);
     }
 
@@ -27,7 +28,7 @@ export default {
     let response = await env.ASSETS.fetch(assetRequest);
 
     if (response.status === 404 && isNavigation(request)) {
-      const indexUrl = new URL("/code/index.html", request.url);
+      const indexUrl = new URL(`${BASE_PATH}/index.html`, request.url);
       response = await env.ASSETS.fetch(indexUrl);
     }
 
@@ -54,7 +55,9 @@ function withHeaders(response, url, headOnly = false) {
     headers.set("Content-Type", "application/wasm");
   }
 
-  if (url.pathname.match(/\.(js|wasm|png|ico|webmanifest|json|svg)$/)) {
+  if (url.pathname.match(/\.(js|wasm)$/)) {
+    headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+  } else if (url.pathname.match(/\.(png|ico|webmanifest|json|svg)$/)) {
     headers.set("Cache-Control", "public, max-age=604800");
   }
 

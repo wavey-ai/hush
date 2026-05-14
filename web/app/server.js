@@ -4,6 +4,7 @@ const path = require("path");
 
 const root = path.join(__dirname, "dist");
 const port = Number(process.env.PORT || 8181);
+const basePath = "/code/hush";
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -26,11 +27,11 @@ const securityHeaders = {
 
 function resolvePath(urlPath) {
   if (urlPath === "/") {
-    return path.join(root, "code", "index.html");
+    return path.join(root, "code", "hush", "index.html");
   }
 
-  if (urlPath === "/code") {
-    return path.join(root, "code", "index.html");
+  if (urlPath === basePath) {
+    return path.join(root, "code", "hush", "index.html");
   }
 
   return path.join(root, decodeURIComponent(urlPath));
@@ -65,5 +66,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`hush web listening on http://127.0.0.1:${port}/code/`);
+  console.log(`hush web listening on http://127.0.0.1:${port}${basePath}/`);
 });

@@ -12,12 +12,13 @@ an inference service when an API URL is configured.
 The current app is designed to run from:
 
 ```text
-https://wavey.ai/code/
+https://wavey.ai/code/hush/
 ```
 
-It is a static Cloudflare Worker asset deployment mounted at `/code`. The Worker
-adds the COOP/COEP headers required for `SharedArrayBuffer`, which the WASM
-worker and AudioWorklet pipeline need.
+It is a static Cloudflare Worker asset deployment mounted under `/code/hush`.
+The top-level `/code` namespace is reserved for the broader Wavey code index and
+other project subpaths. The Worker adds the COOP/COEP headers required for
+`SharedArrayBuffer`, which the WASM worker and AudioWorklet pipeline need.
 
 ## What Runs In The Browser
 
@@ -39,8 +40,8 @@ npm install
 npm run build
 ```
 
-The build output is written to `web/app/dist/code`, mirroring the Cloudflare
-route path. The build uses a local sibling checkout when present:
+The build output is written to `web/app/dist/code/hush`, mirroring the
+Cloudflare route path. The build uses a local sibling checkout when present:
 
 - `../mel-spec`
 
@@ -56,7 +57,7 @@ npm start
 Open:
 
 ```text
-http://127.0.0.1:8181/code/
+http://127.0.0.1:8181/code/hush/
 ```
 
 The local server sends the same cross-origin isolation headers as the Cloudflare
@@ -64,7 +65,7 @@ Worker.
 
 ## Deploy
 
-The repo includes `wrangler.toml` for the `/code` route:
+The repo includes `wrangler.toml` for the `/code/hush` route:
 
 ```bash
 cd web/app
@@ -77,7 +78,7 @@ Wrangler deploys `cloudflare/worker.js` plus static assets from
 `web/app/dist`. The route is configured as:
 
 ```toml
-route = "wavey.ai/code*"
+route = "wavey.ai/code/hush*"
 ```
 
 ## Optional ASR API
@@ -87,7 +88,7 @@ to an API, either set `data-api` on the `<body>` tag or pass an `api` query
 parameter:
 
 ```text
-https://wavey.ai/code/?api=https%3A%2F%2Fapi-hush.wavey.ai
+https://wavey.ai/code/hush/?api=https%3A%2F%2Fapi-hush.wavey.ai
 ```
 
 The request body is the TGA byte buffer produced from the quantized mel segment.

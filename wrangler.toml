@@ -1,7 +1,7 @@
 name = "hush-code"
 main = "cloudflare/worker.js"
 compatibility_date = "2026-05-14"
-route = "wavey.ai/code*"
+route = "wavey.ai/code/hush*"
 
 [assets]
 directory = "web/app/dist"

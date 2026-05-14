@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-OUT_DIR := dist/code
+OUT_DIR := dist/code/hush
 WASM_DIR := $(OUT_DIR)/dist
 DEPS_DIR := .deps
 MEL_SPEC_LOCAL := ../../../mel-spec

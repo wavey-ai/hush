@@ -167,7 +167,7 @@ function wireFileUpload() {
 
 async function decodeAudioFile(file) {
   const bytes = await file.arrayBuffer();
-  const context = new AudioContext({ sampleRate });
+  const context = new AudioContext({ sampleRate: samplingRate });
   const audioBuffer = await context.decodeAudioData(bytes);
   await context.close();
   return resampleToMono16k(audioBuffer);
@@ -206,7 +206,7 @@ function wireMicControls() {
   startButton.addEventListener("click", async () => {
     startButton.disabled = true;
     try {
-      audioContext = new AudioContext({ sampleRate });
+      audioContext = new AudioContext({ sampleRate: samplingRate });
       await startAudioProcessing(audioContext);
       stopButton.disabled = false;
     } catch (error) {
