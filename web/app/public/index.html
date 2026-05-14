@@ -63,16 +63,6 @@
       margin: 18px 0;
     }
 
-    .preset-controls {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 2px;
-      border: 1px solid #d5dae1;
-      border-radius: 8px;
-      background: #fff;
-    }
-
     button,
     input::file-selector-button {
       appearance: none;
@@ -98,12 +88,6 @@
       opacity: 0.5;
     }
 
-    button[aria-pressed="true"] {
-      border-color: #15171a;
-      background: #15171a;
-      color: #fff;
-    }
-
     input[type="file"] {
       max-width: 320px;
       min-height: 36px;
@@ -119,7 +103,14 @@
 
     .status-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .component-grid {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
@@ -145,6 +136,15 @@
       font-size: 18px;
       line-height: 1.2;
       overflow-wrap: anywhere;
+    }
+
+    .component-grid .status-item {
+      min-height: 54px;
+      padding: 8px 10px;
+    }
+
+    .component-grid .value {
+      font-size: 16px;
     }
 
     canvas {
@@ -200,12 +200,8 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .preset-controls {
-        width: 100%;
-      }
-
-      .preset-controls button {
-        flex: 1;
+      .component-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
   </style>
@@ -227,11 +223,6 @@
       </form>
       <button id="startButton" type="button">Start Mic</button>
       <button id="stopButton" type="button" class="secondary" disabled>Stop Mic</button>
-      <div class="preset-controls" role="group" aria-label="VAD preset">
-        <button type="button" class="secondary" data-vad-preset="sensitive">Sensitive</button>
-        <button type="button" class="secondary" data-vad-preset="balanced">Balanced</button>
-        <button type="button" class="secondary" data-vad-preset="safer">Safer</button>
-      </div>
     </section>
 
     <section class="status-grid" aria-label="Status">
@@ -251,9 +242,40 @@
         <span class="label">Segments</span>
         <span class="value" id="segmentCount">0</span>
       </div>
+    </section>
+
+    <section class="component-grid" aria-label="VAD components">
       <div class="status-item">
-        <span class="label">Preset</span>
-        <span class="value" id="presetStatus">Safer</span>
+        <span class="label">Pattern</span>
+        <span class="value" id="patternScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Edges</span>
+        <span class="value" id="edgeScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Ridges</span>
+        <span class="value" id="ridgeScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Harmonic</span>
+        <span class="value" id="harmonicScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Continuity</span>
+        <span class="value" id="continuityScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Flux</span>
+        <span class="value" id="fluxScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Bands</span>
+        <span class="value" id="bandScore">0.00</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Noise reject</span>
+        <span class="value" id="noiseScore">0.00</span>
       </div>
     </section>
 
@@ -265,6 +287,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260514-6"></script>
+  <script src="./app.js?v=20260514-7"></script>
 </body>
 </html>

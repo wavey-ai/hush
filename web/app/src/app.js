@@ -11,8 +11,16 @@ const vadStatus = document.getElementById("vadStatus");
 const frameCount = document.getElementById("frameCount");
 const segmentCount = document.getElementById("segmentCount");
 const isolationStatus = document.getElementById("isolationStatus");
-const presetStatus = document.getElementById("presetStatus");
-const presetButtons = Array.from(document.querySelectorAll("[data-vad-preset]"));
+const componentScoreElements = {
+  pattern: document.getElementById("patternScore"),
+  edges: document.getElementById("edgeScore"),
+  ridges: document.getElementById("ridgeScore"),
+  harmonic: document.getElementById("harmonicScore"),
+  continuity: document.getElementById("continuityScore"),
+  flux: document.getElementById("fluxScore"),
+  bands: document.getElementById("bandScore"),
+  noise: document.getElementById("noiseScore"),
+};
 
 const fftSize = 1024;
 const hopSize = 160;
@@ -23,49 +31,22 @@ const melBufOpts = { size: nMels + 8, max: 64 };
 const micBufOpts = { size: 128, max: 64 };
 const fileBufOpts = { size: hopSize, max: 200_000 };
 
-const vadPresets = {
-  sensitive: {
-    label: "Sensitive",
-    wasm: { minEnergy: 0.96, minY: 3, minX: 3, minMel: 0 },
-    gate: {
-      onFrames: 3,
-      offFrames: 6,
-      minPatternScore: 0,
-      minSpeechFrames: 10,
-      minSpeechRatio: 0.05,
-      minSegmentFrames: 80,
-      maxPreSpeechFrames: 40,
-      trailingSilenceFrames: 6,
-    },
-  },
-  balanced: {
-    label: "Balanced",
-    wasm: { minEnergy: 0.98, minY: 5, minX: 5, minMel: 1 },
-    gate: {
-      onFrames: 5,
-      offFrames: 10,
-      minPatternScore: 0.42,
-      minSpeechFrames: 28,
-      minSpeechRatio: 0.15,
-      minSegmentFrames: 100,
-      maxPreSpeechFrames: 45,
-      trailingSilenceFrames: 10,
-    },
-  },
-  safer: {
-    label: "Safer",
-    wasm: { minEnergy: 1.0, minY: 6, minX: 6, minMel: 1 },
-    gate: {
-      onFrames: 7,
-      offFrames: 12,
-      minPatternScore: 0.55,
-      minSpeechFrames: 35,
-      minSpeechRatio: 0.22,
-      minSegmentFrames: 140,
-      maxPreSpeechFrames: 35,
-      trailingSilenceFrames: 12,
-    },
-  },
+const vadSettings = {
+  minEnergy: 1.0,
+  minY: 6,
+  minX: 6,
+  minMel: 1,
+};
+
+const vadGate = {
+  onFrames: 7,
+  offFrames: 12,
+  minPatternScore: 0.55,
+  minSpeechFrames: 35,
+  minSpeechRatio: 0.22,
+  minSegmentFrames: 140,
+  maxPreSpeechFrames: 35,
+  trailingSilenceFrames: 12,
 };
 
 let melSab;
@@ -79,7 +60,6 @@ let audioStream;
 let audioNode;
 let framesSeen = 0;
 let segmentsSeen = 0;
-let activeVadPreset = "safer";
 let resetSegmentation = () => {};
 
 const apiUrl =
@@ -90,55 +70,6 @@ const apiUrl =
 function setStatus(element, value) {
   if (element) {
     element.textContent = value;
-  }
-}
-
-function vadPreset() {
-  return vadPresets[activeVadPreset] || vadPresets.safer;
-}
-
-function updatePresetUi() {
-  const preset = vadPreset();
-  setStatus(presetStatus, preset.label);
-
-  for (const button of presetButtons) {
-    button.setAttribute(
-      "aria-pressed",
-      button.dataset.vadPreset === activeVadPreset ? "true" : "false"
-    );
-  }
-}
-
-function configureWorkerVad() {
-  if (!pcmWorker) {
-    return;
-  }
-
-  pcmWorker.postMessage({
-    configureVad: true,
-    fftSize,
-    hopSize,
-    samplingRate,
-    nMels,
-    vadSettings: vadPreset().wasm,
-  });
-}
-
-function wireVadPresetControls() {
-  updatePresetUi();
-
-  for (const button of presetButtons) {
-    button.addEventListener("click", () => {
-      const key = button.dataset.vadPreset;
-      if (!vadPresets[key] || key === activeVadPreset) {
-        return;
-      }
-
-      activeVadPreset = key;
-      updatePresetUi();
-      resetSegmentation();
-      configureWorkerVad();
-    });
   }
 }
 
@@ -232,7 +163,6 @@ document.addEventListener("DOMContentLoaded", async function() {
   }
 
   sharedBuffers();
-  wireVadPresetControls();
   await startWorker();
   startUi();
   wireFileUpload();
@@ -323,7 +253,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260514-4"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260514-7"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -339,7 +269,7 @@ async function startWorker() {
     nMels,
     melSab,
     melBufOpts,
-    vadSettings: vadPreset().wasm,
+    vadSettings,
   });
 
   setInterval(() => {
@@ -365,6 +295,27 @@ function interleave(columns) {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
+}
+
+function emptyPatternComponents() {
+  return {
+    pattern: 0,
+    edges: 0,
+    ridges: 0,
+    harmonic: 0,
+    continuity: 0,
+    flux: 0,
+    bands: 0,
+    centroid: 0,
+    noise: 0,
+  };
+}
+
+function updateComponentScores(components) {
+  for (const [key, element] of Object.entries(componentScoreElements)) {
+    const value = components[key];
+    setStatus(element, Number.isFinite(value) ? value.toFixed(2) : "0.00");
+  }
 }
 
 function vectorSimilarity(a, b) {
@@ -533,7 +484,10 @@ function broadbandRejection(values, start, end) {
   const ratio = active / (end - start);
   const enoughStructure = clamp01((ratio - 0.08) / 0.12);
   const notBroadband = clamp01((0.72 - ratio) / 0.22);
-  return enoughStructure * notBroadband;
+  return {
+    ratio,
+    score: enoughStructure * notBroadband,
+  };
 }
 
 function edgeContinuityScore(history, start, end) {
@@ -554,11 +508,11 @@ function edgeContinuityScore(history, start, end) {
   return clamp01(total / count);
 }
 
-function speechPatternScore(frame, history) {
+function speechPatternComponents(frame, history) {
   const values = Array.from(frame.raw, (value) => value / 255);
   const total = values.reduce((sum, value) => sum + value, 0);
   if (total <= 0) {
-    return 0;
+    return emptyPatternComponents();
   }
 
   const speechStart = 4;
@@ -600,7 +554,18 @@ function speechPatternScore(frame, history) {
     bandScore * 0.05 +
     centroidScore * 0.05;
 
-  return structureScore * broadbandGate;
+  return {
+    pattern: structureScore * broadbandGate.score,
+    edges: sustainedEdges.score,
+    ridges: sustainedRidges.score,
+    harmonic: harmonicScore,
+    continuity: edgeContinuity,
+    flux: fluxStability,
+    bands: bandScore,
+    centroid: centroidScore,
+    noise: broadbandGate.score,
+    activeRatio: broadbandGate.ratio,
+  };
 }
 
 function startUi() {
@@ -689,19 +654,21 @@ function startUi() {
     gatedVad = false;
     patternHistory = [];
     setStatus(vadStatus, "quiet");
+    updateComponentScores(emptyPatternComponents());
   };
 
   const filterVad = (frame) => {
-    const gate = vadPreset().gate;
     patternHistory.push(Array.from(frame.raw, (value) => value / 255));
     if (patternHistory.length > 16) {
       patternHistory.shift();
     }
 
-    const patternScore = speechPatternScore(frame, patternHistory);
+    const components = speechPatternComponents(frame, patternHistory);
+    updateComponentScores(components);
     const rawVad =
       frame.vad &&
-      (gate.minPatternScore === 0 || patternScore >= gate.minPatternScore);
+      (vadGate.minPatternScore === 0 ||
+        components.pattern >= vadGate.minPatternScore);
 
     if (rawVad) {
       rawSpeechRun++;
@@ -711,11 +678,11 @@ function startUi() {
       rawSpeechRun = 0;
     }
 
-    if (!gatedVad && rawSpeechRun >= gate.onFrames) {
+    if (!gatedVad && rawSpeechRun >= vadGate.onFrames) {
       gatedVad = true;
     }
 
-    if (gatedVad && rawSilenceRun >= gate.offFrames) {
+    if (gatedVad && rawSilenceRun >= vadGate.offFrames) {
       gatedVad = false;
     }
 
@@ -723,8 +690,6 @@ function startUi() {
   };
 
   const accumulateFrame = (frame) => {
-    const gate = vadPreset().gate;
-
     frames.push(frame);
     if (frame.vad) {
       speechFrames++;
@@ -735,21 +700,21 @@ function startUi() {
       setStatus(vadStatus, "quiet");
     }
 
-    if (speechFrames === 0 && frames.length > gate.maxPreSpeechFrames) {
-      frames.splice(0, frames.length - gate.maxPreSpeechFrames);
+    if (speechFrames === 0 && frames.length > vadGate.maxPreSpeechFrames) {
+      frames.splice(0, frames.length - vadGate.maxPreSpeechFrames);
       silenceFrames = 0;
       return;
     }
 
     if (
       speechFrames > 0 &&
-      silenceFrames >= gate.trailingSilenceFrames &&
-      frames.length >= gate.minSegmentFrames
+      silenceFrames >= vadGate.trailingSilenceFrames &&
+      frames.length >= vadGate.minSegmentFrames
     ) {
       const speechRatio = speechFrames / frames.length;
       if (
-        speechFrames >= gate.minSpeechFrames &&
-        speechRatio >= gate.minSpeechRatio
+        speechFrames >= vadGate.minSpeechFrames &&
+        speechRatio >= vadGate.minSpeechRatio
       ) {
         const dequant = frames.map((a) => a.toF32());
         const normalized = normMel(interleave(dequant));
@@ -840,7 +805,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-4"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260514-7"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
