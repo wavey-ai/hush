@@ -44,7 +44,7 @@ const vadPresets = {
     gate: {
       onFrames: 5,
       offFrames: 10,
-      minPatternScore: 0.32,
+      minPatternScore: 0.42,
       minSpeechFrames: 28,
       minSpeechRatio: 0.15,
       minSegmentFrames: 100,
@@ -58,7 +58,7 @@ const vadPresets = {
     gate: {
       onFrames: 7,
       offFrames: 12,
-      minPatternScore: 0.45,
+      minPatternScore: 0.55,
       minSpeechFrames: 35,
       minSpeechRatio: 0.22,
       minSegmentFrames: 140,
@@ -430,6 +430,60 @@ function sustainedEdgeStructure(history, start, end) {
   };
 }
 
+function localRidgeMap(values, start, end) {
+  const ridges = [];
+
+  for (let i = start + 2; i < end - 2; i++) {
+    const value = values[i];
+    const left = Math.max(values[i - 2], values[i - 1]);
+    const right = Math.max(values[i + 1], values[i + 2]);
+    const shoulder = Math.max(left, right);
+    const prominence = value - shoulder;
+    ridges.push(value >= 0.28 && prominence >= 0.035 ? prominence : 0);
+  }
+
+  return ridges;
+}
+
+function sustainedRidgeStructure(history, start, end) {
+  const recent = history.slice(-10);
+  if (recent.length < 4) {
+    return { bins: [], score: 0 };
+  }
+
+  const ridgeMaps = recent.map((frame) => localRidgeMap(frame, start, end));
+  const sustainedBins = [];
+
+  for (let bin = 0; bin < ridgeMaps[0].length; bin++) {
+    let run = 0;
+    let maxRun = 0;
+
+    for (const ridgeMap of ridgeMaps) {
+      const strength = Math.max(
+        ridgeMap[bin - 1] || 0,
+        ridgeMap[bin],
+        ridgeMap[bin + 1] || 0
+      );
+
+      if (strength >= 0.04) {
+        run++;
+        maxRun = Math.max(maxRun, run);
+      } else {
+        run = 0;
+      }
+    }
+
+    if (maxRun >= 4) {
+      sustainedBins.push(start + bin + 2);
+    }
+  }
+
+  return {
+    bins: sustainedBins,
+    score: clamp01((sustainedBins.length - 2) / 10),
+  };
+}
+
 function harmonicSpacingScore(bins) {
   if (bins.length < 3) {
     return 0;
@@ -446,6 +500,40 @@ function harmonicSpacingScore(bins) {
   }
 
   return clamp01((groups.length - 2) / 6) * clamp01((12 - groups.length) / 8);
+}
+
+function spectralFluxStability(history, start, end) {
+  const recent = history.slice(-8);
+  if (recent.length < 4) {
+    return 0;
+  }
+
+  let diff = 0;
+  let energy = 0;
+
+  for (let t = 1; t < recent.length; t++) {
+    for (let i = start; i < end; i++) {
+      diff += Math.abs(recent[t][i] - recent[t - 1][i]);
+      energy += Math.max(recent[t][i], recent[t - 1][i]);
+    }
+  }
+
+  if (energy <= 0) {
+    return 0;
+  }
+
+  const flux = diff / energy;
+  return clamp01((0.62 - flux) / 0.38);
+}
+
+function broadbandRejection(values, start, end) {
+  const active = values
+    .slice(start, end)
+    .filter((value) => value >= 0.32).length;
+  const ratio = active / (end - start);
+  const enoughStructure = clamp01((ratio - 0.08) / 0.12);
+  const notBroadband = clamp01((0.72 - ratio) / 0.22);
+  return enoughStructure * notBroadband;
 }
 
 function edgeContinuityScore(history, start, end) {
@@ -491,16 +579,28 @@ function speechPatternScore(frame, history) {
       ? 1
       : clamp01(1 - Math.min(Math.abs(centroid - 0.45), 0.45) / 0.45);
   const sustainedEdges = sustainedEdgeStructure(history, speechStart, speechEnd);
-  const harmonicScore = harmonicSpacingScore(sustainedEdges.bins);
-  const edgeContinuity = edgeContinuityScore(history, speechStart, speechEnd);
-
-  return (
-    sustainedEdges.score * 0.45 +
-    harmonicScore * 0.2 +
-    edgeContinuity * 0.2 +
-    bandScore * 0.1 +
-    centroidScore * 0.05
+  const sustainedRidges = sustainedRidgeStructure(
+    history,
+    speechStart,
+    speechEnd
   );
+  const harmonicScore = Math.max(
+    harmonicSpacingScore(sustainedEdges.bins),
+    harmonicSpacingScore(sustainedRidges.bins)
+  );
+  const edgeContinuity = edgeContinuityScore(history, speechStart, speechEnd);
+  const fluxStability = spectralFluxStability(history, speechStart, speechEnd);
+  const broadbandGate = broadbandRejection(values, speechStart, speechEnd);
+
+  const structureScore =
+    Math.max(sustainedEdges.score, sustainedRidges.score) * 0.45 +
+    harmonicScore * 0.2 +
+    edgeContinuity * 0.15 +
+    fluxStability * 0.1 +
+    bandScore * 0.05 +
+    centroidScore * 0.05;
+
+  return structureScore * broadbandGate;
 }
 
 function startUi() {
