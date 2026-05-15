@@ -56,7 +56,7 @@ const vadSettings = {
 
 const vadGate = {
   onFrames: 3,
-  structuredOnFrames: 6,
+  structuredOnFrames: 5,
   fastOnsetFrames: 1,
   offFrames: 12,
   minPatternScore: 0.32,
@@ -222,7 +222,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-23"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-24"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1047,16 +1047,28 @@ function speechPatternComponents(frame, history) {
     trackedRidgeBands.score,
     trackedBands.score
   );
+  const speechStructureScore =
+    structureEvidence * 0.32 +
+    horizontalBandScore * 0.22 +
+    edgeContinuity * 0.16 +
+    fluxStability * 0.1 +
+    bandContrast * 0.08 +
+    bandScore * 0.06 +
+    centroidScore * 0.04 +
+    harmonicScore * 0.02;
   const structuredSpeechGate =
-    horizontalBands >= vadGate.targetHorizontalBands + 1 &&
-    energy >= 0.55 &&
-    bandScore >= 0.25 &&
-    bandContrast >= 0.35 &&
-    edgeContinuity >= 0.72 &&
-    harmonicScore >= 0.2 &&
-    structureEvidence >= 0.72 &&
-    fluxStability >= 0.5;
-  const speechGateScore = structuredSpeechGate ? 0.7 : 0;
+    horizontalBands >= vadGate.targetHorizontalBands &&
+    energy >= 0.45 &&
+    bandScore >= 0.12 &&
+    edgeContinuity >= 0.58 &&
+    structureEvidence >= 0.58 &&
+    fluxStability >= 0.35 &&
+    (bandContrast >= 0.16 ||
+      trackedRidgeBands.score >= 0.5 ||
+      harmonicScore >= 0.1);
+  const speechGateScore = structuredSpeechGate
+    ? 0.5 + clamp01((speechStructureScore - 0.48) / 0.32) * 0.35
+    : 0;
   const effectiveImpulseScore = Math.max(broadbandGate.score, speechGateScore);
 
   const structureScore =
@@ -1216,7 +1228,7 @@ function startUi() {
     }
 
     updateComponentScores(components);
-    const structuredSpeech = components.speechGate >= 0.7;
+    const structuredSpeech = components.speechGate >= 0.5;
     const highConfidenceOnset =
       components.bands >= vadGate.fastOnsetBands &&
       components.pattern >= vadGate.fastOnsetPatternScore &&
@@ -1393,7 +1405,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-23"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-24"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
