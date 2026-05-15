@@ -1,7 +1,6 @@
-const { startup } = wasm_bindgen;
-
 const scriptBase = new URL(".", document.currentScript.src);
 const assetUrl = (path) => new URL(path, scriptBase).href;
+const assetVersion = "20260515-31";
 
 const canvas = document.getElementById("canvas");
 const startButton = document.getElementById("startButton");
@@ -188,15 +187,20 @@ function colorizeGrayscaleValue(value, colormapName, reverse) {
 let addFrame;
 
 document.addEventListener("DOMContentLoaded", async function() {
-  if (!assertIsolation()) {
-    return;
-  }
+  try {
+    if (!assertIsolation()) {
+      return;
+    }
 
-  sharedBuffers();
-  updateSttNote();
-  await startWorker();
-  startUi();
-  wireMicControls();
+    sharedBuffers();
+    updateSttNote();
+    await startWorker();
+    startUi();
+    wireMicControls();
+  } catch (error) {
+    setStatus(wasmStatus, `startup error: ${error.message}`);
+    startButton.disabled = true;
+  }
 });
 
 function wireMicControls() {
@@ -219,9 +223,7 @@ function wireMicControls() {
 
 async function startWorker() {
   setStatus(wasmStatus, "loading");
-  await wasm_bindgen();
-
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-25"));
+  pcmWorker = new Worker(assetUrl(`worker.js?v=${assetVersion}`));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1404,7 +1406,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-25"));
+  await context.audioWorklet.addModule(assetUrl(`dist/worklet.js?v=${assetVersion}`));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);

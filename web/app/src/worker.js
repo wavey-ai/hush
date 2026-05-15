@@ -1,11 +1,12 @@
 const assetUrl = (path) => new URL(path, self.location.href).href;
+const assetVersion = "20260515-31";
 
-importScripts(assetUrl("dist/mel_spec.js"));
-importScripts(assetUrl("ringbuffer.js"));
+importScripts(assetUrl(`dist/mel_spec.js?v=${assetVersion}`));
+importScripts(assetUrl(`ringbuffer.js?v=${assetVersion}`));
 
 const { SpeechToMel } = wasm_bindgen;
 
-const instance = wasm_bindgen(assetUrl("dist/mel_spec_bg.wasm"));
+const instance = wasm_bindgen(assetUrl(`dist/mel_spec_bg.wasm?v=${assetVersion}`));
 const pendingMessages = [];
 let wasmReady = false;
 let melBuf;

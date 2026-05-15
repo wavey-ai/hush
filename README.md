@@ -59,7 +59,7 @@ overlay, sticky component peaks, and final VAD state together. The live tuning
 checkpoint is:
 
 ```text
-https://wavey.ai/code/hush/?v=20260515-30
+https://wavey.ai/code/hush/?v=20260515-31
 ```
 
 The next step is to turn the manual tuning loop into a regression harness:
