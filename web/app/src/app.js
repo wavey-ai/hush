@@ -24,6 +24,12 @@ const componentScoreElements = {
   noise: document.getElementById("noiseScore"),
 };
 const stickyScoreMs = 1000;
+const stickyScoreMinimums = {
+  bands: 1,
+  energy: 0.5,
+  noise: 0.5,
+  default: 0.1,
+};
 const stickyScoreElements = {};
 const stickyScores = {};
 
@@ -209,7 +215,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-11"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-12"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -301,23 +307,46 @@ function updateStickyScore(key, value, formatted) {
     stickyScoreElements[key] = stickyElement;
   }
 
-  const now = performance.now();
-  const current = stickyScores[key] || { value: 0, expiresAt: 0, text: "" };
-  if (now > current.expiresAt || value >= current.value) {
-    current.value = value;
-    current.text = formatted;
-    current.expiresAt = now + stickyScoreMs;
+  const minimum = stickyScoreMinimums[key] ?? stickyScoreMinimums.default;
+  const current = stickyScores[key] || { value: 0, text: "", timeoutId: null };
+  if (value < minimum) {
+    return;
   }
 
-  if (current.value > 0 && now <= current.expiresAt) {
-    stickyElement.textContent = current.text;
-    stickyElement.classList.add("active");
-  } else {
+  if (current.timeoutId && value <= current.value) {
+    return;
+  }
+
+  if (current.timeoutId) {
+    window.clearTimeout(current.timeoutId);
+  }
+
+  const timeoutId = window.setTimeout(
+    () => clearStickyScore(key, timeoutId),
+    stickyScoreMs
+  );
+  stickyScores[key] = { value, text: formatted, timeoutId };
+  stickyElement.textContent = formatted;
+  stickyElement.classList.add("active");
+}
+
+function clearStickyScore(key, timeoutId = null) {
+  const current = stickyScores[key];
+  if (timeoutId !== null && current?.timeoutId !== timeoutId) {
+    return;
+  }
+
+  if (timeoutId === null && current?.timeoutId) {
+    window.clearTimeout(current.timeoutId);
+  }
+
+  const stickyElement = stickyScoreElements[key];
+  if (stickyElement) {
     stickyElement.textContent = "";
     stickyElement.classList.remove("active");
   }
 
-  stickyScores[key] = current;
+  stickyScores[key] = { value: 0, text: "", timeoutId: null };
 }
 
 function vectorSimilarity(a, b) {
@@ -1283,7 +1312,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-11"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-12"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
