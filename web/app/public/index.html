@@ -55,12 +55,6 @@
       line-height: 1.5;
     }
 
-    .stt-note {
-      margin-top: 6px;
-      color: #8a2c3b;
-      font-weight: 650;
-    }
-
     .controls {
       display: flex;
       align-items: center;
@@ -137,28 +131,12 @@
     }
 
     .component-grid .status-item {
-      min-height: 74px;
+      min-height: 54px;
       padding: 8px 10px;
     }
 
     .component-grid .value {
       font-size: 16px;
-    }
-
-    .sticky-value {
-      display: block;
-      min-height: 16px;
-      margin-top: 4px;
-      color: #e12247;
-      font-variant-numeric: tabular-nums;
-      font-size: 13px;
-      font-weight: 700;
-      line-height: 1.15;
-      visibility: hidden;
-    }
-
-    .sticky-value.active {
-      visibility: visible;
     }
 
     canvas {
@@ -225,8 +203,7 @@
     <header>
       <div>
         <h1>Hush <span aria-hidden="true">🤫</span></h1>
-        <p>Testing for sustained horizontal speech-band structure in live mel spectrograms.</p>
-        <p class="stt-note" id="sttNote">STT from captured mel images is offline.</p>
+      <p>Live local mic mel spectrograms and VAD in the browser.</p>
       </div>
       <p id="isolationStatus">Checking browser isolation...</p>
     </header>
@@ -257,39 +234,39 @@
 
     <section class="component-grid" aria-label="VAD components">
       <div class="status-item">
-        <span class="label" title="Combined score for sustained horizontal speech-band structure">Speech shape</span>
+        <span class="label">Pattern</span>
         <span class="value" id="patternScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Horizontal Sobel edges across mel frequency bins">Horizontal edges</span>
+        <span class="label">Edges</span>
         <span class="value" id="edgeScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Normalized strength of narrow local spectral ridges">Ridge strength</span>
+        <span class="label">Ridges</span>
         <span class="value" id="ridgeScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Whether detected bands have speech-like spacing">Band spacing</span>
+        <span class="label">Harmonic</span>
         <span class="value" id="harmonicScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Whether edges persist in adjacent frames">Edge continuity</span>
+        <span class="label">Continuity</span>
         <span class="value" id="continuityScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Frame-to-frame stability inside the speech band">Frame stability</span>
+        <span class="label">Flux</span>
         <span class="value" id="fluxScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Count of tracked lateral frequency bands">Lateral bands</span>
+        <span class="label">Bands</span>
         <span class="value" id="bandScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Energy in the speech mel band">Speech-band energy</span>
+        <span class="label">Energy</span>
         <span class="value" id="energyScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Rejects broadband activity that does not look like speech structure">Not broadband</span>
+        <span class="label">Noise reject</span>
         <span class="value" id="noiseScore">0.00</span>
       </div>
     </section>
@@ -302,6 +279,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260515-18"></script>
+  <script src="./app.js?v=20260515-19"></script>
 </body>
 </html>

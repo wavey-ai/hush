@@ -11,7 +11,6 @@ const vadStatus = document.getElementById("vadStatus");
 const frameCount = document.getElementById("frameCount");
 const segmentCount = document.getElementById("segmentCount");
 const isolationStatus = document.getElementById("isolationStatus");
-const sttNote = document.getElementById("sttNote");
 const componentScoreElements = {
   pattern: document.getElementById("patternScore"),
   edges: document.getElementById("edgeScore"),
@@ -23,21 +22,6 @@ const componentScoreElements = {
   energy: document.getElementById("energyScore"),
   noise: document.getElementById("noiseScore"),
 };
-const stickyScoreMs = 1000;
-const stickyScoreMinimums = {
-  bands: 1,
-  energy: 0.5,
-  noise: 0.5,
-  default: 0.1,
-};
-const stickyScoreResetMinimums = {
-  bands: 1,
-  energy: 0.3,
-  noise: 0.3,
-  default: 0.05,
-};
-const stickyScoreElements = {};
-const stickyScores = {};
 
 const fftSize = 1024;
 const hopSize = 160;
@@ -99,15 +83,6 @@ function setStatus(element, value) {
   if (element) {
     element.textContent = value;
   }
-}
-
-function updateSttNote() {
-  setStatus(
-    sttNote,
-    apiUrl
-      ? "STT from captured mel images is routed to the configured API."
-      : "STT from captured mel images is offline."
-  );
 }
 
 function assertIsolation() {
@@ -193,7 +168,6 @@ document.addEventListener("DOMContentLoaded", async function() {
   }
 
   sharedBuffers();
-  updateSttNote();
   await startWorker();
   startUi();
   wireMicControls();
@@ -221,7 +195,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-18"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-19"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -289,95 +263,8 @@ function updateComponentScores(components) {
         : Number.isFinite(value)
           ? value.toFixed(2)
           : "0.00";
-    updateStickyScore(key, value, formatted);
     setStatus(element, formatted);
   }
-}
-
-function updateStickyScore(key, value, formatted) {
-  if (!Number.isFinite(value)) {
-    return;
-  }
-
-  const element = componentScoreElements[key];
-  if (!element) {
-    return;
-  }
-
-  let stickyElement = stickyScoreElements[key];
-  if (!stickyElement) {
-    stickyElement = document.createElement("span");
-    stickyElement.className = "sticky-value";
-    stickyElement.setAttribute("aria-hidden", "true");
-    element.before(stickyElement);
-    stickyScoreElements[key] = stickyElement;
-  }
-
-  const minimum = stickyScoreMinimums[key] ?? stickyScoreMinimums.default;
-  const resetMinimum =
-    stickyScoreResetMinimums[key] ?? stickyScoreResetMinimums.default;
-  const current = stickyScores[key] || {
-    value: 0,
-    text: "",
-    timeoutId: null,
-    armed: true,
-  };
-
-  if (value < resetMinimum) {
-    current.armed = true;
-    stickyScores[key] = current;
-    return;
-  }
-
-  if (!current.armed && !current.timeoutId) {
-    return;
-  }
-
-  if (value < minimum) {
-    return;
-  }
-
-  if (current.timeoutId) {
-    if (value > current.value) {
-      current.value = value;
-      current.text = formatted;
-      stickyElement.textContent = formatted;
-      stickyScores[key] = current;
-    }
-    return;
-  }
-
-  const timeoutId = window.setTimeout(
-    () => clearStickyScore(key, timeoutId),
-    stickyScoreMs
-  );
-  stickyScores[key] = { value, text: formatted, timeoutId, armed: false };
-  stickyElement.textContent = formatted;
-  stickyElement.classList.add("active");
-}
-
-function clearStickyScore(key, timeoutId = null) {
-  const current = stickyScores[key];
-  if (timeoutId !== null && current?.timeoutId !== timeoutId) {
-    return;
-  }
-
-  if (timeoutId === null && current?.timeoutId) {
-    window.clearTimeout(current.timeoutId);
-  }
-
-  const stickyElement = stickyScoreElements[key];
-  if (stickyElement) {
-    stickyElement.textContent = "";
-    stickyElement.classList.remove("active");
-  }
-
-  stickyScores[key] = {
-    value: 0,
-    text: "",
-    timeoutId: null,
-    armed: current?.armed ?? false,
-  };
 }
 
 function vectorSimilarity(a, b) {
@@ -1343,7 +1230,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-18"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-19"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
