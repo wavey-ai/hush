@@ -189,3 +189,7 @@ For an end-to-end browser check, run `npm start` and verify:
 - `crossOriginIsolated` is true.
 - `dist/mel_spec_bg.wasm` loads as `application/wasm`.
 - Starting the microphone changes VAD status and frame count.
+
+## License
+
+MIT. See `LICENSE-MIT`.

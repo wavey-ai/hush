@@ -2,6 +2,7 @@
   "name": "hush-web",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "description": "Browser WASM mel spectrogram and VAD demo for Hush.",
   "scripts": {
     "build": "make build",
