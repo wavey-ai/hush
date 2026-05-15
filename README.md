@@ -4,8 +4,8 @@ Browser-side mel spectrogram and voice activity detection for private ASR
 workflows.
 
 Hush converts microphone input into quantized mel spectrogram segments in WASM.
-Audio stays in the browser. Captured TGA mel images can optionally be sent to an
-ASR endpoint.
+Audio stays in the browser. Captured TGA mel images can be transcribed locally
+with the bundled Whisper WASM worker, or optionally sent to an ASR endpoint.
 
 ## Current Demo
 
@@ -30,9 +30,9 @@ other project subpaths. The Worker adds the COOP/COEP headers required for
 - Captured speech segments are shown as spectrogram images.
 - Captured TGA bytes can be POSTed to an ASR endpoint when an API URL is
   configured.
-- Without an API URL, the active demo preloads the experimental local Whisper
-  WASM worker and transcribes captured mel segments in the browser. Use
-  `?whisper=0` to disable that path while testing VAD only.
+- Without an API URL, the active demo preloads the local Whisper WASM worker and
+  transcribes captured mel segments in the browser. Use `?whisper=0` to disable
+  that path while testing VAD only.
 
 ## VAD Tuning Notes
 
@@ -98,13 +98,19 @@ If they are not available, the Makefile clones shallow copies into
 
 ## Local Whisper WASM
 
-The active browser app includes an experimental `whisper.cpp` WASM binding for
-direct mel input. It loads in a dedicated worker after the spectrogram UI has
-started, so the mic path does not depend on main-thread model or WASM startup.
+The active browser app has a working `whisper.cpp` WASM binding for direct mel
+input. It loads in a dedicated worker after the spectrogram UI has started, so
+the mic path does not depend on main-thread model or WASM startup.
+
+The live `v=20260515-35` path has been verified end to end: the page preloads
+the Whisper WASM runtime, fetches/caches the GGML model, accepts the
+`mel-spec`-generated mel tensor, calls `whisper_set_mel`, and returns a local
+transcript from `whisper_full`.
 
 The intended path is:
 
-1. Hush normalizes the captured mel segment and writes it as a compact 8-bit TGA.
+1. Hush uses the Whisper-compatible `mel-spec` log-mel normalization and writes
+   the captured segment as a compact 8-bit TGA.
 2. The browser decodes that TGA back to an 80-mel `Float32Array`.
 3. `whisper-worker.js` loads the custom `hush-whisper.js` Emscripten module.
 4. The custom binding calls upstream `whisper_set_mel(ctx, data, n_frames, 80)`
