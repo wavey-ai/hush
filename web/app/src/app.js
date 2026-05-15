@@ -16,7 +16,6 @@ const componentScoreElements = {
   pattern: document.getElementById("patternScore"),
   edges: document.getElementById("edgeScore"),
   ridges: document.getElementById("ridgeScore"),
-  harmonic: document.getElementById("harmonicScore"),
   continuity: document.getElementById("continuityScore"),
   flux: document.getElementById("fluxScore"),
   bands: document.getElementById("bandScore"),
@@ -222,7 +221,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-24"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-25"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1405,7 +1404,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-24"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-25"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
