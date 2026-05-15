@@ -222,7 +222,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-14"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-15"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -275,9 +275,12 @@ function emptyPatternComponents() {
     continuity: 0,
     flux: 0,
     bands: 0,
+    stableBands: 0,
     centroid: 0,
     noise: 0,
+    noiseScore: 0,
     energy: 0,
+    fluxStability: 0,
   };
 }
 
@@ -893,10 +896,10 @@ function mergeBandBins(bins, maxGap = 3.5) {
   ).map((track) => Math.round(track.center));
 }
 
-function spectralFluxStability(history, start, end) {
+function spectralFluxStats(history, start, end) {
   const recent = history.slice(-8);
   if (recent.length < 4) {
-    return 0;
+    return { change: 0, stability: 0 };
   }
 
   let diff = 0;
@@ -910,11 +913,14 @@ function spectralFluxStability(history, start, end) {
   }
 
   if (energy <= 0) {
-    return 0;
+    return { change: 0, stability: 0 };
   }
 
   const flux = diff / energy;
-  return clamp01((0.62 - flux) / 0.38);
+  return {
+    change: flux,
+    stability: clamp01((0.62 - flux) / 0.38),
+  };
 }
 
 function broadbandRejection(values, start, end) {
@@ -1008,14 +1014,26 @@ function speechPatternComponents(frame, history) {
     trackedRidgeBands.score,
     clamp01((trackedBands.count - 1) / 3)
   );
+  const visibleBands = {
+    bins: mergeBandBins(
+      [
+        ...sustainedSobel.bins,
+        ...sustainedRidges.bins,
+        ...trackedSobelBands.bins,
+        ...trackedRidgeBands.bins,
+      ],
+      1.25
+    ),
+  };
+  visibleBands.count = visibleBands.bins.length;
   const edgeScore = Math.max(
     sustainedEdges.score,
     sustainedSobel.score,
     trackedSobelBands.score
   );
   const ridgeScore = Math.max(sustainedRidges.score, trackedRidgeBands.score);
-  const edgeStrength = clamp01((trackedSobelBands.strength - 0.08) / 0.92);
-  const ridgeStrength = clamp01((trackedRidgeBands.strength - 0.025) / 0.12);
+  const edgeStrength = trackedSobelBands.strength || 0;
+  const ridgeStrength = trackedRidgeBands.strength || 0;
   const bandLayout = Math.max(
     bandLayoutScore(sustainedEdges.bins),
     bandLayoutScore(sustainedRidges.bins),
@@ -1027,7 +1045,7 @@ function speechPatternComponents(frame, history) {
     speechBand.start,
     speechBand.end
   );
-  const fluxStability = spectralFluxStability(
+  const fluxStats = spectralFluxStats(
     history,
     speechBand.start,
     speechBand.end
@@ -1055,7 +1073,7 @@ function speechPatternComponents(frame, history) {
     bandLayout * 0.2 +
     horizontalBandScore * 0.2 +
     edgeContinuity * 0.1 +
-    fluxStability * 0.05 +
+    fluxStats.stability * 0.05 +
     bandScore * 0.05 +
     centroidScore * 0.05;
 
@@ -1065,11 +1083,14 @@ function speechPatternComponents(frame, history) {
     ridges: ridgeStrength,
     harmonic: bandLayout,
     continuity: edgeContinuity,
-    flux: fluxStability,
-    bands: horizontalBands,
+    flux: fluxStats.change,
+    fluxStability: fluxStats.stability,
+    bands: visibleBands.count,
+    stableBands: horizontalBands,
     bandBalance: bandScore,
     centroid: centroidScore,
-    noise: broadbandGate.score,
+    noise: broadbandGate.ratio,
+    noiseScore: broadbandGate.score,
     energy,
     activeRatio: broadbandGate.ratio,
     edgeScore,
@@ -1205,23 +1226,23 @@ function startUi() {
 
     updateComponentScores(components);
     const highConfidenceOnset =
-      components.bands >= vadGate.fastOnsetBands &&
+      components.stableBands >= vadGate.fastOnsetBands &&
       components.pattern >= vadGate.fastOnsetPatternScore &&
       components.energy >= vadGate.fastOnsetEnergyScore &&
       components.edgeScore >= 0.75 &&
       components.ridgeScore >= 0.65 &&
       components.harmonic >= 0.2 &&
       components.continuity >= 0.55 &&
-      components.noise >= 0.75 &&
+      components.noiseScore >= 0.75 &&
       components.bandBalance >= 0.25;
     const enoughSpeechBands =
-      (components.bands >= vadGate.targetHorizontalBands &&
-        components.noise >= 0.45 &&
+      (components.stableBands >= vadGate.targetHorizontalBands &&
+        components.noiseScore >= 0.45 &&
         components.bandBalance >= 0.2) ||
-      (components.bands >= vadGate.minHorizontalBands &&
-        components.edges >= 0.4 &&
+      (components.stableBands >= vadGate.minHorizontalBands &&
+        components.edgeScore >= 0.4 &&
         components.ridgeTracks >= 0.67 &&
-        components.noise >= 0.5);
+        components.noiseScore >= 0.5);
     const rawVad =
       enoughSpeechBands &&
       (vadGate.minPatternScore === 0 ||
@@ -1378,7 +1399,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-14"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-15"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
