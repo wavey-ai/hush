@@ -30,6 +30,12 @@ const stickyScoreMinimums = {
   noise: 0.5,
   default: 0.1,
 };
+const stickyScoreResetMinimums = {
+  bands: 1,
+  energy: 0.3,
+  noise: 0.3,
+  default: 0.05,
+};
 const stickyScoreElements = {};
 const stickyScores = {};
 
@@ -215,7 +221,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-12"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-13"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -308,24 +314,44 @@ function updateStickyScore(key, value, formatted) {
   }
 
   const minimum = stickyScoreMinimums[key] ?? stickyScoreMinimums.default;
-  const current = stickyScores[key] || { value: 0, text: "", timeoutId: null };
+  const resetMinimum =
+    stickyScoreResetMinimums[key] ?? stickyScoreResetMinimums.default;
+  const current = stickyScores[key] || {
+    value: 0,
+    text: "",
+    timeoutId: null,
+    armed: true,
+  };
+
+  if (value < resetMinimum) {
+    current.armed = true;
+    stickyScores[key] = current;
+    return;
+  }
+
+  if (!current.armed && !current.timeoutId) {
+    return;
+  }
+
   if (value < minimum) {
     return;
   }
 
-  if (current.timeoutId && value <= current.value) {
-    return;
-  }
-
   if (current.timeoutId) {
-    window.clearTimeout(current.timeoutId);
+    if (value > current.value) {
+      current.value = value;
+      current.text = formatted;
+      stickyElement.textContent = formatted;
+      stickyScores[key] = current;
+    }
+    return;
   }
 
   const timeoutId = window.setTimeout(
     () => clearStickyScore(key, timeoutId),
     stickyScoreMs
   );
-  stickyScores[key] = { value, text: formatted, timeoutId };
+  stickyScores[key] = { value, text: formatted, timeoutId, armed: false };
   stickyElement.textContent = formatted;
   stickyElement.classList.add("active");
 }
@@ -346,7 +372,12 @@ function clearStickyScore(key, timeoutId = null) {
     stickyElement.classList.remove("active");
   }
 
-  stickyScores[key] = { value: 0, text: "", timeoutId: null };
+  stickyScores[key] = {
+    value: 0,
+    text: "",
+    timeoutId: null,
+    armed: current?.armed ?? false,
+  };
 }
 
 function vectorSimilarity(a, b) {
@@ -1312,7 +1343,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-12"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-13"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
