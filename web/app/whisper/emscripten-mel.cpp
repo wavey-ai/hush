@@ -61,15 +61,10 @@ EMSCRIPTEN_BINDINGS(hush_whisper) {
             return std::string("ERROR: invalid mel shape");
         }
 
-        std::vector<float> mel_data(n);
-        emscripten::val heap = emscripten::val::module_property("HEAPU8");
-        emscripten::val memory = heap["buffer"];
-        emscripten::val memory_view = mel["constructor"].new_(
-            memory,
-            reinterpret_cast<uintptr_t>(mel_data.data()),
-            n
-        );
-        memory_view.call<void>("set", mel);
+        std::vector<float> mel_data = emscripten::vecFromJSArray<float>(mel);
+        if ((int) mel_data.size() != n) {
+            return std::string("ERROR: failed to copy mel tensor");
+        }
 
         const int n_len = n / n_mels;
         if (whisper_set_mel(ctx, mel_data.data(), n_len, n_mels) != 0) {

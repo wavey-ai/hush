@@ -49,7 +49,9 @@ async function initWhisper() {
 
   postStatus("Loading Whisper WASM.");
   importScripts(moduleUrl);
+  postStatus("Initializing Whisper WASM runtime.");
   whisperModule = await whisper_factory({
+    mainScriptUrlOrBlob: moduleUrl,
     print: (text) => postMessage({ type: "log", message: text }),
     printErr: (text) => postMessage({ type: "log", message: text }),
     setStatus: postStatus,
@@ -82,6 +84,10 @@ async function ensureInit() {
 
 async function transcribe(job) {
   await ensureInit();
+  if (!(job.mel instanceof Float32Array)) {
+    throw new Error("invalid mel payload");
+  }
+
   const started = performance.now();
   const text = whisperModule.full_default_mel(
     whisperInstance,

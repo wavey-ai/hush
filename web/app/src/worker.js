@@ -1,5 +1,5 @@
 const assetUrl = (path) => new URL(path, self.location.href).href;
-const assetVersion = "20260515-31";
+const assetVersion = "20260515-35";
 
 importScripts(assetUrl(`dist/mel_spec.js?v=${assetVersion}`));
 importScripts(assetUrl(`ringbuffer.js?v=${assetVersion}`));

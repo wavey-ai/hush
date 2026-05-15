@@ -29,8 +29,10 @@ other project subpaths. The Worker adds the COOP/COEP headers required for
 - An AudioWorklet streams microphone samples into a shared ring buffer.
 - Captured speech segments are shown as spectrogram images.
 - Captured TGA bytes can be POSTed to an ASR endpoint when an API URL is
-  configured. Local Whisper WASM support is being worked on behind the scenes,
-  but it is not wired into the active live demo.
+  configured.
+- Without an API URL, the active demo preloads the experimental local Whisper
+  WASM worker and transcribes captured mel segments in the browser. Use
+  `?whisper=0` to disable that path while testing VAD only.
 
 ## VAD Tuning Notes
 
@@ -59,7 +61,7 @@ overlay, sticky component peaks, and final VAD state together. The live tuning
 checkpoint is:
 
 ```text
-https://wavey.ai/code/hush/?v=20260515-31
+https://wavey.ai/code/hush/?v=20260515-35
 ```
 
 The next step is to turn the manual tuning loop into a regression harness:
@@ -96,9 +98,9 @@ If they are not available, the Makefile clones shallow copies into
 
 ## Local Whisper WASM
 
-The repository includes an experimental `whisper.cpp` WASM binding for direct
-mel input. It is currently not enabled in the active browser app because the
-first live wiring caused a mic/spectrogram regression and was rolled back.
+The active browser app includes an experimental `whisper.cpp` WASM binding for
+direct mel input. It loads in a dedicated worker after the spectrogram UI has
+started, so the mic path does not depend on main-thread model or WASM startup.
 
 The intended path is:
 
