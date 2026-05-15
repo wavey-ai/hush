@@ -12,6 +12,7 @@ const frameCount = document.getElementById("frameCount");
 const segmentCount = document.getElementById("segmentCount");
 const isolationStatus = document.getElementById("isolationStatus");
 const sttNote = document.getElementById("sttNote");
+const queryParams = new URLSearchParams(window.location.search);
 const componentScoreElements = {
   pattern: document.getElementById("patternScore"),
   edges: document.getElementById("edgeScore"),
@@ -89,11 +90,37 @@ let audioNode;
 let framesSeen = 0;
 let segmentsSeen = 0;
 let resetSegmentation = () => {};
+let whisperWorker = null;
+let whisperJobId = 0;
+const whisperJobs = new Map();
 
 const apiUrl =
   document.body.dataset.api ||
-  new URLSearchParams(window.location.search).get("api") ||
+  queryParams.get("api") ||
   "";
+const defaultWhisperModelUrl =
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin";
+const localWhisperDisabled =
+  document.body.dataset.whisper === "off" || queryParams.get("whisper") === "0";
+const whisperModelUrl =
+  document.body.dataset.whisperModel ||
+  queryParams.get("whisperModel") ||
+  defaultWhisperModelUrl;
+const whisperLanguage =
+  document.body.dataset.whisperLanguage || queryParams.get("language") || "en";
+const whisperThreads = Math.max(
+  1,
+  Math.min(
+    8,
+    Number.parseInt(
+      document.body.dataset.whisperThreads ||
+        queryParams.get("whisperThreads") ||
+        "4",
+      10
+    ) || 4
+  )
+);
+const localWhisperEnabled = !apiUrl && !localWhisperDisabled;
 
 function setStatus(element, value) {
   if (element) {
@@ -102,12 +129,106 @@ function setStatus(element, value) {
 }
 
 function updateSttNote() {
+  let note = "STT from captured mel images is offline.";
+  if (apiUrl) {
+    note = "STT from captured mel images is routed to the configured API.";
+  } else if (localWhisperEnabled) {
+    note = "STT from captured mel images uses local Whisper WASM.";
+  }
+
+  setStatus(sttNote, note);
+}
+
+function setWhisperStatus(message) {
   setStatus(
     sttNote,
-    apiUrl
-      ? "STT from captured mel images is routed to the configured API."
+    localWhisperEnabled
+      ? `Local Whisper WASM: ${message}`
       : "STT from captured mel images is offline."
   );
+}
+
+function ensureWhisperWorker() {
+  if (!localWhisperEnabled) {
+    return null;
+  }
+
+  if (whisperWorker) {
+    return whisperWorker;
+  }
+
+  whisperWorker = new Worker(assetUrl("whisper-worker.js?v=20260515-28"));
+  whisperWorker.onmessage = (event) => {
+    const message = event.data || {};
+    if (message.type === "status") {
+      setWhisperStatus(message.message);
+      return;
+    }
+
+    if (message.type === "ready") {
+      setWhisperStatus("ready");
+      return;
+    }
+
+    if (message.type === "fatal") {
+      setWhisperStatus(`error: ${message.message}`);
+      for (const job of whisperJobs.values()) {
+        job.element.textContent = `Whisper error: ${message.message}`;
+      }
+      whisperJobs.clear();
+      return;
+    }
+
+    if (message.type === "log") {
+      return;
+    }
+
+    const job = whisperJobs.get(message.id);
+    if (!job) {
+      return;
+    }
+
+    whisperJobs.delete(message.id);
+    if (message.type === "result") {
+      job.element.textContent = message.text
+        ? `${message.text} (${message.elapsedMs} ms)`
+        : `No transcript (${message.elapsedMs} ms)`;
+    } else if (message.type === "error") {
+      job.element.textContent = `Whisper error: ${message.message}`;
+    }
+  };
+
+  whisperWorker.postMessage({
+    type: "init",
+    moduleUrl: assetUrl("dist/hush-whisper.js?v=20260515-28"),
+    modelUrl: whisperModelUrl,
+    language: whisperLanguage,
+    nThreads: whisperThreads,
+  });
+
+  return whisperWorker;
+}
+
+function transcribeMelSegment(melTensor, element, numColumns) {
+  const worker = ensureWhisperWorker();
+  if (!worker) {
+    return false;
+  }
+
+  const id = ++whisperJobId;
+  whisperJobs.set(id, { element });
+  element.textContent = `Transcribing locally (${numColumns} frames)...`;
+  worker.postMessage(
+    {
+      type: "transcribe",
+      id,
+      mel: melTensor,
+      nMels,
+    },
+    [melTensor.buffer]
+  );
+
+  return true;
 }
 
 function assertIsolation() {
@@ -221,7 +342,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-25"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-28"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1310,13 +1431,14 @@ function startUi() {
         const dequant = frames.map((a) => a.toF32());
         const normalized = normMel(interleave(dequant));
         const tga = createTGAImage(normalized, nMels);
-        newSegment(interleave(frames.map((a) => a.luma)), tga);
+        const melTensor = parseTgaMel(tga, nMels);
+        newSegment(interleave(frames.map((a) => a.luma)), tga, melTensor);
       }
       resetSegmentation();
     }
   };
 
-  const newSegment = async (frames, tga) => {
+  const newSegment = async (frames, tga, melTensor) => {
     segmentsSeen += 1;
     setStatus(segmentCount, String(segmentsSeen));
 
@@ -1347,15 +1469,19 @@ function startUi() {
     imgElement.alt = `Mel segment ${segmentsSeen}`;
 
     const spanElement = document.createElement("span");
-    spanElement.textContent = apiUrl
-      ? "Transcribing..."
-      : `${numColumns} frames captured locally`;
+    spanElement.textContent =
+      apiUrl || localWhisperEnabled
+        ? "Transcribing..."
+        : `${numColumns} frames captured locally`;
 
     liElement.appendChild(imgElement);
     liElement.appendChild(spanElement);
     mels.prepend(liElement);
 
     if (!apiUrl) {
+      if (localWhisperEnabled && melTensor) {
+        transcribeMelSegment(melTensor, spanElement, numColumns);
+      }
       return;
     }
 
@@ -1404,7 +1530,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-25"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-28"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
@@ -1488,6 +1614,30 @@ function createTGAImage(frames, nMels) {
   tgaImage.set(data, tgaHeader.length);
 
   return tgaImage;
+}
+
+function parseTgaMel(tgaImage, expectedMels) {
+  if (!tgaImage || tgaImage.length < 26) {
+    throw new Error("invalid TGA mel image");
+  }
+
+  const view = new DataView(
+    tgaImage.buffer,
+    tgaImage.byteOffset,
+    tgaImage.byteLength
+  );
+  const width = view.getUint16(12, true);
+  const height = view.getUint16(14, true);
+  if (height !== expectedMels) {
+    throw new Error(`invalid mel bands: ${height}`);
+  }
+
+  const range = {
+    min: view.getFloat32(18, true),
+    max: view.getFloat32(22, true),
+  };
+  const data = tgaImage.slice(26, 26 + width * height);
+  return Float32Array.from(dequantize(data, range));
 }
 
 function quantize(frame) {

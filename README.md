@@ -3,9 +3,10 @@
 Browser-side mel spectrogram and voice activity detection for private ASR
 workflows.
 
-Hush converts microphone or WAV input into quantized mel spectrogram segments in
-WASM. Audio stays in the browser; only compact TGA mel images need to be sent to
-an inference service when an API URL is configured.
+Hush converts microphone input into quantized mel spectrogram segments in WASM.
+Audio stays in the browser. Captured TGA mel images can either be sent to an ASR
+endpoint or decoded back into an 80-by-N mel tensor and transcribed locally with
+Whisper WASM.
 
 ## Current Demo
 
@@ -27,8 +28,12 @@ other project subpaths. The Worker adds the COOP/COEP headers required for
   mel pipeline.
 - Web Workers keep mel/WAV processing off the UI thread.
 - An AudioWorklet streams microphone samples into a shared ring buffer.
-- Captured speech segments are shown as spectrogram images and can optionally be
-  POSTed as TGA bytes to an ASR endpoint.
+- Captured speech segments are shown as spectrogram images.
+- By default, completed captured segments are queued to a local Whisper WASM
+  worker. The worker decodes the captured TGA mel payload back into a
+  `Float32Array` and calls `whisper_set_mel` before decoding.
+- Captured TGA bytes can still be POSTed to an ASR endpoint when an API URL is
+  configured.
 
 ## VAD Tuning Notes
 
@@ -57,7 +62,7 @@ overlay, sticky component peaks, and final VAD state together. The live tuning
 checkpoint is:
 
 ```text
-https://wavey.ai/code/hush/?v=20260515-24
+https://wavey.ai/code/hush/?v=20260515-28
 ```
 
 The next step is to turn the manual tuning loop into a regression harness:
@@ -84,11 +89,44 @@ npm run build
 ```
 
 The build output is written to `web/app/dist/code/hush`, mirroring the
-Cloudflare route path. The build uses a local sibling checkout when present:
+Cloudflare route path. The build uses local sibling checkouts when present:
 
 - `../mel-spec`
+- `../whisper.cpp-upstream`
 
-If it is not available, the Makefile clones a shallow copy into `web/app/.deps`.
+If they are not available, the Makefile clones shallow copies into
+`web/app/.deps`.
+
+## Local Whisper WASM
+
+The default page has no server ASR dependency. When no `api` is configured, each
+completed captured segment starts an async browser-side Whisper job:
+
+1. Hush normalizes the captured mel segment and writes it as a compact 8-bit TGA.
+2. The browser decodes that TGA back to an 80-mel `Float32Array`.
+3. `whisper-worker.js` loads the custom `hush-whisper.js` Emscripten module.
+4. The custom binding calls upstream `whisper_set_mel(ctx, data, n_frames, 80)`
+   and then runs `whisper_full`.
+
+This is deliberately not the stock `whisper.wasm` example path, because the
+stock browser example accepts PCM audio. Upstream `whisper.cpp` already supports
+direct mel input; Hush adds a small browser binding for it.
+
+The default model is:
+
+```text
+https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin
+```
+
+The browser caches the model with the Cache API after the first fetch. Useful
+query parameters:
+
+```text
+?whisper=0
+?whisperModel=https%3A%2F%2Fexample.com%2Fggml-model.bin
+?language=en
+?whisperThreads=4
+```
 
 ## Local Run
 
@@ -126,9 +164,8 @@ route = "wavey.ai/code/hush*"
 
 ## Optional ASR API
 
-By default, the live page only captures local mel segments. To POST TGA segments
-to an API, either set `data-api` on the `<body>` tag or pass an `api` query
-parameter:
+To bypass local Whisper and POST TGA segments to an API, either set `data-api`
+on the `<body>` tag or pass an `api` query parameter:
 
 ```text
 https://wavey.ai/code/hush/?api=https%3A%2F%2Fapi-hush.wavey.ai
