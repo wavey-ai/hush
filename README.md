@@ -9,16 +9,9 @@ with the bundled Whisper WASM worker, or optionally sent to an ASR endpoint.
 
 ## Current Demo
 
-The current app is designed to run from:
-
 ```text
 https://wavey.ai/code/hush/
 ```
-
-It is a static Cloudflare Worker asset deployment mounted under `/code/hush`.
-The top-level `/code` namespace is reserved for the broader Wavey code index and
-other project subpaths. The Worker adds the COOP/COEP headers required for
-`SharedArrayBuffer`, which the WASM worker and AudioWorklet pipeline need.
 
 ## What Runs In The Browser
 
@@ -107,18 +100,21 @@ the Whisper WASM runtime, fetches/caches the GGML model, accepts the
 `mel-spec`-generated mel tensor, calls `whisper_set_mel`, and returns a local
 transcript from `whisper_full`.
 
+This uses the direct-mel endpoint/entry point we PR'd against `whisper.cpp`:
+`whisper_set_mel(ctx, data, n_frames, 80)`. It is not the stock browser example
+that feeds PCM audio into `whisper.wasm`.
+
 The intended path is:
 
 1. Hush uses the Whisper-compatible `mel-spec` log-mel normalization and writes
    the captured segment as a compact 8-bit TGA.
 2. The browser decodes that TGA back to an 80-mel `Float32Array`.
 3. `whisper-worker.js` loads the custom `hush-whisper.js` Emscripten module.
-4. The custom binding calls upstream `whisper_set_mel(ctx, data, n_frames, 80)`
+4. The custom binding calls `whisper_set_mel(ctx, data, n_frames, 80)`
    and then runs `whisper_full`.
 
-This is deliberately not the stock `whisper.wasm` example path, because the
-stock browser example accepts PCM audio. Upstream `whisper.cpp` already supports
-direct mel input; Hush adds a small browser binding for it.
+Upstream `whisper.cpp` already supports direct mel input; Hush adds a small
+browser binding for it.
 
 The default model is:
 
