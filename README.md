@@ -30,6 +30,49 @@ other project subpaths. The Worker adds the COOP/COEP headers required for
 - Captured speech segments are shown as spectrogram images and can optionally be
   POSTed as TGA bytes to an ASR endpoint.
 
+## VAD Tuning Notes
+
+The current Hush demo is tuned around the visible structure in the mel
+spectrogram rather than raw audio amplitude. Speech usually shows sustained
+lateral bands and ridges across adjacent frames. Short mechanical sounds, such
+as key taps, can be very loud and can create sharp edges, but they tend to be
+brief, impulsive, and less stable over time.
+
+The browser tuning went through a few useful failure modes:
+
+- A loose structure override made sustained speech easier to catch, but it also
+  let key taps and typing through.
+- A stricter impulse gate rejected those taps, but missed short/fricative words
+  such as "five" even when the Sobel overlay showed clear horizontal speech
+  lines.
+- The current OK state uses a graded `Impulse gate`: it still blocks obvious
+  impulses, but can open when sustained speech-band structure, ridge/edge
+  continuity, band balance, and energy agree for several consecutive frames.
+  Harmonic spacing is only weak evidence now, because fricatives do not always
+  have clean harmonic spacing.
+
+This is still a browser-side heuristic, not a complete learned VAD. It is useful
+because the diagnostics are visible: the user can see the mel image, Sobel
+overlay, sticky component peaks, and final VAD state together. The live tuning
+checkpoint is:
+
+```text
+https://wavey.ai/code/hush/?v=20260515-24
+```
+
+The next step is to turn the manual tuning loop into a regression harness:
+
+- Record short clips for silence, speech, sustained vowels, fricatives such as
+  "five", keyboard taps, typing, desk taps, fan noise, and room noise.
+- Replay those clips through the same WASM/browser VAD path and save per-frame
+  component scores.
+- Track false positives and false negatives by clip type, not just aggregate
+  accuracy.
+- Compare the heuristic against Silero or another established VAD on the same
+  clips, using both accuracy and runtime.
+- If the heuristic keeps hitting edge cases, train a small classifier over the
+  existing mel-structure components instead of adding more hand-tuned gates.
+
 ## Build
 
 From the repository root:
