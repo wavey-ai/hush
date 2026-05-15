@@ -4,9 +4,8 @@ Browser-side mel spectrogram and voice activity detection for private ASR
 workflows.
 
 Hush converts microphone input into quantized mel spectrogram segments in WASM.
-Audio stays in the browser. Captured TGA mel images can either be sent to an ASR
-endpoint or decoded back into an 80-by-N mel tensor and transcribed locally with
-Whisper WASM.
+Audio stays in the browser. Captured TGA mel images can optionally be sent to an
+ASR endpoint.
 
 ## Current Demo
 
@@ -29,11 +28,9 @@ other project subpaths. The Worker adds the COOP/COEP headers required for
 - Web Workers keep mel/WAV processing off the UI thread.
 - An AudioWorklet streams microphone samples into a shared ring buffer.
 - Captured speech segments are shown as spectrogram images.
-- By default, completed captured segments are queued to a local Whisper WASM
-  worker. The worker decodes the captured TGA mel payload back into a
-  `Float32Array` and calls `whisper_set_mel` before decoding.
-- Captured TGA bytes can still be POSTed to an ASR endpoint when an API URL is
-  configured.
+- Captured TGA bytes can be POSTed to an ASR endpoint when an API URL is
+  configured. Local Whisper WASM support is being worked on behind the scenes,
+  but it is not wired into the active live demo.
 
 ## VAD Tuning Notes
 
@@ -62,7 +59,7 @@ overlay, sticky component peaks, and final VAD state together. The live tuning
 checkpoint is:
 
 ```text
-https://wavey.ai/code/hush/?v=20260515-28
+https://wavey.ai/code/hush/?v=20260515-30
 ```
 
 The next step is to turn the manual tuning loop into a regression harness:
@@ -99,8 +96,11 @@ If they are not available, the Makefile clones shallow copies into
 
 ## Local Whisper WASM
 
-The default page has no server ASR dependency. When no `api` is configured, each
-completed captured segment starts an async browser-side Whisper job:
+The repository includes an experimental `whisper.cpp` WASM binding for direct
+mel input. It is currently not enabled in the active browser app because the
+first live wiring caused a mic/spectrogram regression and was rolled back.
+
+The intended path is:
 
 1. Hush normalizes the captured mel segment and writes it as a compact 8-bit TGA.
 2. The browser decodes that TGA back to an 80-mel `Float32Array`.
@@ -119,10 +119,9 @@ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin
 ```
 
 The browser caches the model with the Cache API after the first fetch. Useful
-query parameters:
+query parameters for the experimental worker are:
 
 ```text
-?whisper=0
 ?whisperModel=https%3A%2F%2Fexample.com%2Fggml-model.bin
 ?language=en
 ?whisperThreads=4
