@@ -221,7 +221,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-21"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-22"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -1006,15 +1006,28 @@ function speechPatternComponents(frame, history) {
       (vadGate.targetHorizontalBands - vadGate.minHorizontalBands + 1)
   );
 
+  const structureEvidence = Math.max(
+    sustainedEdges.score,
+    sustainedRidges.score,
+    sustainedSobel.score,
+    trackedSobelBands.score,
+    trackedRidgeBands.score,
+    trackedBands.score
+  );
+  const structuredSpeechGate =
+    horizontalBands >= vadGate.targetHorizontalBands &&
+    energy >= 0.55 &&
+    bandScore >= 0.2 &&
+    edgeContinuity >= 0.65 &&
+    harmonicScore >= 0.16 &&
+    structureEvidence >= 0.65 &&
+    fluxStability >= 0.45;
+  const effectiveBroadbandScore = structuredSpeechGate
+    ? Math.max(broadbandGate.score, 0.65)
+    : broadbandGate.score;
+
   const structureScore =
-    Math.max(
-      sustainedEdges.score,
-      sustainedRidges.score,
-      sustainedSobel.score,
-      trackedSobelBands.score,
-      trackedRidgeBands.score,
-      trackedBands.score
-    ) * 0.35 +
+    structureEvidence * 0.35 +
     harmonicScore * 0.2 +
     horizontalBandScore * 0.2 +
     edgeContinuity * 0.1 +
@@ -1023,7 +1036,7 @@ function speechPatternComponents(frame, history) {
     centroidScore * 0.05;
 
   return {
-    pattern: structureScore * broadbandGate.score,
+    pattern: structureScore * effectiveBroadbandScore,
     edges: Math.max(
       sustainedEdges.score,
       sustainedSobel.score,
@@ -1036,7 +1049,7 @@ function speechPatternComponents(frame, history) {
     bands: horizontalBands,
     bandBalance: bandScore,
     centroid: centroidScore,
-    noise: broadbandGate.score,
+    noise: effectiveBroadbandScore,
     energy,
     activeRatio: broadbandGate.ratio,
     ridgeTracks: trackedRidgeBands.score,
@@ -1343,7 +1356,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-21"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-22"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
