@@ -1,17 +1,13 @@
 # Hush
 
+https://wavey.ai/code/hush/
+
 Browser-side mel spectrogram and voice activity detection for private ASR
 workflows.
 
 Hush converts microphone input into quantized mel spectrogram segments in WASM.
 Audio stays in the browser. Captured TGA mel images can be transcribed locally
 with the bundled Whisper WASM worker, or optionally sent to an ASR endpoint.
-
-## Current Demo
-
-```text
-https://wavey.ai/code/hush/
-```
 
 ## What Runs In The Browser
 
