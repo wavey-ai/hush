@@ -261,15 +261,15 @@
         <span class="value" id="patternScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Horizontal Sobel edges across mel frequency bins">Horizontal edges</span>
+        <span class="label" title="0-1 average strength of tracked horizontal Sobel edges">Edge strength</span>
         <span class="value" id="edgeScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Normalized strength of narrow local spectral ridges">Ridge strength</span>
+        <span class="label" title="0-1 average strength of tracked narrow spectral ridges">Ridge strength</span>
         <span class="value" id="ridgeScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Whether detected bands have speech-like spacing">Band spacing</span>
+        <span class="label" title="0-1 score for enough lateral bands spread across speech mel bins">Band layout</span>
         <span class="value" id="harmonicScore">0.00</span>
       </div>
       <div class="status-item">
@@ -302,6 +302,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260515-13"></script>
+  <script src="./app.js?v=20260515-14"></script>
 </body>
 </html>
