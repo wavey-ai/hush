@@ -56,11 +56,11 @@ const vadSettings = {
 };
 
 const vadGate = {
-  onFrames: 3,
+  onFrames: 2,
   fastOnsetFrames: 1,
   offFrames: 12,
-  minPatternScore: 0.32,
-  minEnergyScore: 0.32,
+  minPatternScore: 0.28,
+  minEnergyScore: 0.25,
   fastOnsetPatternScore: 0.62,
   fastOnsetEnergyScore: 0.55,
   fastOnsetBands: 5,
@@ -222,7 +222,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-16"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-17"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -565,7 +565,7 @@ function localRidgeMap(values, start, end) {
     const right = Math.max(values[i + 1], values[i + 2]);
     const shoulder = Math.max(left, right);
     const prominence = value - shoulder;
-    ridges.push(value >= 0.22 && prominence >= 0.025 ? prominence : 0);
+    ridges.push(value >= 0.16 && prominence >= 0.012 ? prominence : 0);
   }
 
   return ridges;
@@ -730,7 +730,7 @@ function ridgeCenters(values, start, end) {
   const strengths = new Map();
 
   for (let i = 0; i < ridgeMap.length; i++) {
-    if (ridgeMap[i] >= 0.025) {
+    if (ridgeMap[i] >= 0.012) {
       const bin = start + i + 2;
       bins.push(bin);
       strengths.set(bin, ridgeMap[i]);
@@ -887,11 +887,11 @@ function countTrackedRidgeBands(history, start, end) {
   }
 
   return trackFrequencyCenters(columns, {
-    maxDrift: 2.0,
+    maxDrift: 3.0,
     maxGap: 1,
-    minRun: 5,
-    minHits: 5,
-    minStrength: 0.035,
+    minRun: 4,
+    minHits: 4,
+    minStrength: 0.014,
   });
 }
 
@@ -1015,6 +1015,7 @@ function speechPatternComponents(frame, history) {
     bins: mergeBandBins([
       ...trackedSobelBands.bins,
       ...trackedRidgeBands.bins,
+      ...sustainedRidges.bins,
     ]),
   };
   trackedBands.count = trackedBands.bins.length;
@@ -1415,7 +1416,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-16"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-17"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
