@@ -257,39 +257,39 @@
 
     <section class="component-grid" aria-label="VAD components">
       <div class="status-item">
-        <span class="label" title="0-1 VAD score from horizontal speech-band structure">Speech score</span>
+        <span class="label" title="Combined score for sustained horizontal speech-band structure">Speech shape</span>
         <span class="value" id="patternScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Average horizontal Sobel edge strength in tracked bands">Edge avg</span>
+        <span class="label" title="Horizontal Sobel edges across mel frequency bins">Horizontal edges</span>
         <span class="value" id="edgeScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Average narrow spectral ridge prominence in tracked bands">Ridge avg</span>
+        <span class="label" title="Normalized strength of narrow local spectral ridges">Ridge strength</span>
         <span class="value" id="ridgeScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="0-1 score for enough bands spread across speech mel bins">Band spread</span>
+        <span class="label" title="Whether detected bands have speech-like spacing">Band spacing</span>
         <span class="value" id="harmonicScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="0-1 similarity of edge maps across adjacent frames">Edge persistence</span>
+        <span class="label" title="Whether edges persist in adjacent frames">Edge continuity</span>
         <span class="value" id="continuityScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Frame-to-frame change ratio inside the speech band">Frame change</span>
+        <span class="label" title="Frame-to-frame stability inside the speech band">Frame stability</span>
         <span class="value" id="fluxScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Fine count of visible lateral bands; the VAD gate uses a merged stable count">Visible bands</span>
+        <span class="label" title="Count of tracked lateral frequency bands">Lateral bands</span>
         <span class="value" id="bandScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="0-1 peak energy score in the speech mel band">Energy score</span>
+        <span class="label" title="Energy in the speech mel band">Speech-band energy</span>
         <span class="value" id="energyScore">0.00</span>
       </div>
       <div class="status-item">
-        <span class="label" title="Fraction of speech-band mel bins above the activity threshold">Band fill</span>
+        <span class="label" title="Rejects broadband activity that does not look like speech structure">Not broadband</span>
         <span class="value" id="noiseScore">0.00</span>
       </div>
     </section>
@@ -302,6 +302,6 @@
 
   <script src="./dist/mel_spec.js"></script>
   <script src="./ringbuffer.js"></script>
-  <script src="./app.js?v=20260515-17"></script>
+  <script src="./app.js?v=20260515-18"></script>
 </body>
 </html>
