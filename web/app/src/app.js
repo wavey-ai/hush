@@ -56,6 +56,7 @@ const vadSettings = {
 
 const vadGate = {
   onFrames: 3,
+  structuredOnFrames: 6,
   fastOnsetFrames: 1,
   offFrames: 12,
   minPatternScore: 0.32,
@@ -221,7 +222,7 @@ async function startWorker() {
   setStatus(wasmStatus, "loading");
   await wasm_bindgen();
 
-  pcmWorker = startup(assetUrl("worker.js?v=20260515-22"));
+  pcmWorker = startup(assetUrl("worker.js?v=20260515-23"));
   pcmWorker.onmessage = (event) => {
     if (event.data?.error) {
       setStatus(wasmStatus, event.data.error);
@@ -277,6 +278,7 @@ function emptyPatternComponents() {
     centroid: 0,
     noise: 0,
     energy: 0,
+    speechGate: 0,
   };
 }
 
@@ -901,6 +903,32 @@ function broadbandRejection(values, start, end) {
   };
 }
 
+function speechBandContrast(values, start, end) {
+  const bandValues = values.slice(start, end).sort((a, b) => a - b);
+  if (bandValues.length === 0) {
+    return 0;
+  }
+
+  const quantile = (position) => {
+    const index = Math.min(
+      bandValues.length - 1,
+      Math.max(0, Math.round(position * (bandValues.length - 1)))
+    );
+    return bandValues[index];
+  };
+
+  const low = quantile(0.35);
+  const mid = quantile(0.5);
+  const high = quantile(0.9);
+  const localContrast = (high - low) / (high + 0.08);
+  const peakLift = (high + 0.03) / (mid + 0.03);
+
+  return (
+    clamp01((localContrast - 0.18) / 0.34) *
+    clamp01((peakLift - 1.25) / 1.0)
+  );
+}
+
 function edgeContinuityScore(history, start, end) {
   const recent = history.slice(-7);
   if (recent.length < 4) {
@@ -1000,6 +1028,11 @@ function speechPatternComponents(frame, history) {
     speechBand.start,
     speechBand.end
   );
+  const bandContrast = speechBandContrast(
+    values,
+    speechBand.start,
+    speechBand.end
+  );
   const horizontalBands = trackedBands.count;
   const horizontalBandScore = clamp01(
     (horizontalBands - vadGate.minHorizontalBands + 1) /
@@ -1015,16 +1048,16 @@ function speechPatternComponents(frame, history) {
     trackedBands.score
   );
   const structuredSpeechGate =
-    horizontalBands >= vadGate.targetHorizontalBands &&
+    horizontalBands >= vadGate.targetHorizontalBands + 1 &&
     energy >= 0.55 &&
-    bandScore >= 0.2 &&
-    edgeContinuity >= 0.65 &&
-    harmonicScore >= 0.16 &&
-    structureEvidence >= 0.65 &&
-    fluxStability >= 0.45;
-  const effectiveBroadbandScore = structuredSpeechGate
-    ? Math.max(broadbandGate.score, 0.65)
-    : broadbandGate.score;
+    bandScore >= 0.25 &&
+    bandContrast >= 0.35 &&
+    edgeContinuity >= 0.72 &&
+    harmonicScore >= 0.2 &&
+    structureEvidence >= 0.72 &&
+    fluxStability >= 0.5;
+  const speechGateScore = structuredSpeechGate ? 0.7 : 0;
+  const effectiveImpulseScore = Math.max(broadbandGate.score, speechGateScore);
 
   const structureScore =
     structureEvidence * 0.35 +
@@ -1036,7 +1069,7 @@ function speechPatternComponents(frame, history) {
     centroidScore * 0.05;
 
   return {
-    pattern: structureScore * effectiveBroadbandScore,
+    pattern: structureScore * effectiveImpulseScore,
     edges: Math.max(
       sustainedEdges.score,
       sustainedSobel.score,
@@ -1049,10 +1082,11 @@ function speechPatternComponents(frame, history) {
     bands: horizontalBands,
     bandBalance: bandScore,
     centroid: centroidScore,
-    noise: effectiveBroadbandScore,
+    noise: effectiveImpulseScore,
     energy,
     activeRatio: broadbandGate.ratio,
     ridgeTracks: trackedRidgeBands.score,
+    speechGate: speechGateScore,
   };
 }
 
@@ -1182,6 +1216,7 @@ function startUi() {
     }
 
     updateComponentScores(components);
+    const structuredSpeech = components.speechGate >= 0.7;
     const highConfidenceOnset =
       components.bands >= vadGate.fastOnsetBands &&
       components.pattern >= vadGate.fastOnsetPatternScore &&
@@ -1220,6 +1255,8 @@ function startUi() {
 
     const requiredOnFrames = highConfidenceOnset
       ? vadGate.fastOnsetFrames
+      : structuredSpeech
+        ? vadGate.structuredOnFrames
       : vadGate.onFrames;
     if (!gatedVad && rawSpeechRun >= requiredOnFrames) {
       gatedVad = true;
@@ -1356,7 +1393,7 @@ async function startAudioProcessing(context) {
   const audioInput = context.createMediaStreamSource(audioStream);
   audioInput.connect(volume);
 
-  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-22"));
+  await context.audioWorklet.addModule(assetUrl("dist/worklet.js?v=20260515-23"));
 
   audioNode = new AudioWorkletNode(context, "AudioSender");
   volume.connect(audioNode);
