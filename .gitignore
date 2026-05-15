@@ -1,10 +1,7 @@
 .env
 .wrangler
-*.tmp
-main
-function.zip
 node_modules
-build
 dist
-.artifacts
-bundle
+build
+.deps
+*.tmp

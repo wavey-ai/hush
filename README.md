@@ -171,7 +171,7 @@ To bypass local Whisper and POST TGA segments to an API, either set `data-api`
 on the `<body>` tag or pass an `api` query parameter:
 
 ```text
-https://wavey.ai/code/hush/?api=https%3A%2F%2Fapi-hush.wavey.ai
+https://wavey.ai/code/hush/?api=https%3A%2F%2Fexample.com%2Fhush-asr
 ```
 
 The request body is the TGA byte buffer produced from the quantized mel segment.
@@ -189,9 +189,3 @@ For an end-to-end browser check, run `npm start` and verify:
 - `crossOriginIsolated` is true.
 - `dist/mel_spec_bg.wasm` loads as `application/wasm`.
 - Starting the microphone changes VAD status and frame count.
-
-## Legacy
-
-The historical AWS, S3, CloudFront, Cognito, and GPU API files are still in this
-repository for reference. The active web demo path is the Cloudflare/WASM setup
-described above.
