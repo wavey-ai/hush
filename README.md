@@ -28,7 +28,7 @@ with the bundled Whisper WASM worker, or optionally sent to an ASR endpoint.
 The current Hush demo is tuned around the visible structure in the mel
 spectrogram rather than raw audio amplitude. Speech usually shows sustained
 lateral bands and ridges across adjacent frames. Short mechanical sounds, such
-as key taps, can be very loud and can create sharp edges, but they tend to be
+as key taps, can be loud and can create sharp edges. These sounds are usually
 brief, impulsive, and less stable over time.
 
 The browser tuning went through a few useful failure modes:
@@ -91,12 +91,12 @@ The active browser app has a working `whisper.cpp` WASM binding for direct mel
 input. It loads in a dedicated worker after the spectrogram UI has started, so
 the mic path does not depend on main-thread model or WASM startup.
 
-The live `v=20260515-35` path has been verified end to end: the page preloads
-the Whisper WASM runtime, fetches/caches the GGML model, accepts the
-`mel-spec`-generated mel tensor, calls `whisper_set_mel`, and returns a local
-transcript from `whisper_full`.
+The live `v=20260515-35` path has passed an end-to-end verification. The page
+preloads the Whisper WASM runtime and caches the GGML model. It accepts the mel
+tensor from `mel-spec` and calls `whisper_set_mel`. It returns a local transcript
+from `whisper_full`.
 
-This uses the direct-mel endpoint/entry point we PR'd against `whisper.cpp`:
+This uses the direct-mel entry point proposed for `whisper.cpp`:
 `whisper_set_mel(ctx, data, n_frames, 80)`. It is not the stock browser example
 that feeds PCM audio into `whisper.wasm`.
 
@@ -109,7 +109,7 @@ The intended path is:
 4. The custom binding calls `whisper_set_mel(ctx, data, n_frames, 80)`
    and then runs `whisper_full`.
 
-Upstream `whisper.cpp` already supports direct mel input; Hush adds a small
+Upstream `whisper.cpp` already supports direct mel input. Hush adds a small
 browser binding for it.
 
 The default model is:
