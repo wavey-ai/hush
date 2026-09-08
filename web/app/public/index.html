@@ -61,6 +61,28 @@
       font-weight: 650;
     }
 
+    .repo-links {
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    .repo-links a {
+      color: #15171a;
+      font-weight: 650;
+      text-decoration: none;
+      border-bottom: 1px solid #c9ced6;
+    }
+
+    .repo-links a:hover,
+    .repo-links a:focus-visible {
+      border-bottom-color: #15171a;
+    }
+
+    .repo-links span {
+      color: #8b929c;
+      margin: 0 8px;
+    }
+
     .controls {
       display: flex;
       align-items: center;
@@ -226,6 +248,11 @@
       <div>
         <h1>Hush <span aria-hidden="true">🤫</span></h1>
         <p class="stt-note" id="sttNote">STT from captured mel images is offline.</p>
+        <p class="repo-links">
+          <a href="https://github.com/wavey-ai/hush" rel="noopener">hush</a>
+          <span aria-hidden="true">/</span>
+          <a href="https://github.com/wavey-ai/mel-spec" rel="noopener">mel-spec</a>
+        </p>
       </div>
       <p id="isolationStatus">Checking browser isolation...</p>
     </header>
