@@ -4,6 +4,7 @@ OUT_DIR := dist/code/hush
 WASM_DIR := $(OUT_DIR)/dist
 DEPS_DIR := .deps
 MEL_SPEC_LOCAL := ../../../mel-spec
+MEL_SPEC_REF := v0.5.0
 MEL_SPEC_DIR ?= $(shell if [ -d "$(MEL_SPEC_LOCAL)" ]; then printf "$(MEL_SPEC_LOCAL)"; else printf "$(DEPS_DIR)/mel-spec"; fi)
 WHISPER_CPP_LOCAL := ../../../whisper.cpp-upstream
 WHISPER_CPP_DIR ?= $(shell if [ -d "$(WHISPER_CPP_LOCAL)" ]; then printf "$(WHISPER_CPP_LOCAL)"; else printf "$(DEPS_DIR)/whisper.cpp"; fi)
@@ -19,7 +20,7 @@ deps:
 	@if [ ! -d "$(MEL_SPEC_DIR)" ]; then \
 		rm -rf "$(DEPS_DIR)/mel-spec"; \
 		mkdir -p "$(DEPS_DIR)"; \
-		git clone --depth 1 https://github.com/wavey-ai/mel-spec.git "$(DEPS_DIR)/mel-spec"; \
+		git clone --depth 1 --branch "$(MEL_SPEC_REF)" https://github.com/wavey-ai/mel-spec.git "$(DEPS_DIR)/mel-spec"; \
 	fi
 	@if [ ! -d "$(WHISPER_CPP_DIR)" ]; then \
 		rm -rf "$(DEPS_DIR)/whisper.cpp"; \

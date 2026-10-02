@@ -1,6 +1,6 @@
 const scriptBase = new URL(".", document.currentScript.src);
 const assetUrl = (path) => new URL(path, scriptBase).href;
-const assetVersion = "20260515-35";
+const assetVersion = "20261003-36";
 
 const canvas = document.getElementById("canvas");
 const startButton = document.getElementById("startButton");

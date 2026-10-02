@@ -50,7 +50,7 @@ overlay, sticky component peaks, and final VAD state together. The live tuning
 checkpoint is:
 
 ```text
-https://wavey.ai/code/hush/?v=20260515-35
+https://wavey.ai/code/hush/?v=20261003-36
 ```
 
 The next step is to turn the manual tuning loop into a regression harness:
@@ -83,7 +83,7 @@ Cloudflare route path. The build uses local sibling checkouts when present:
 - `../whisper.cpp-upstream`
 
 If they are not available, the Makefile clones shallow copies into
-`web/app/.deps`.
+`web/app/.deps`. The `mel-spec` clone uses the `MEL_SPEC_REF` tag, `v0.5.0`.
 
 ## Local Whisper WASM
 
@@ -91,7 +91,7 @@ The active browser app has a working `whisper.cpp` WASM binding for direct mel
 input. It loads in a dedicated worker after the spectrogram UI has started, so
 the mic path does not depend on main-thread model or WASM startup.
 
-The live `v=20260515-35` path has passed an end-to-end verification. The page
+The `v=20260515-35` build passed an end-to-end verification. The page
 preloads the Whisper WASM runtime and caches the GGML model. It accepts the mel
 tensor from `mel-spec` and calls `whisper_set_mel`. It returns a local transcript
 from `whisper_full`.
